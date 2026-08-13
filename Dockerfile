@@ -11,6 +11,7 @@ WORKDIR /app
 COPY pyproject.toml requirements-build.lock requirements.lock README.md LICENSE ./
 COPY src ./src
 COPY demo ./demo
+COPY evals ./evals
 COPY policies ./policies
 
 RUN pip install --no-cache-dir --requirement requirements-build.lock \

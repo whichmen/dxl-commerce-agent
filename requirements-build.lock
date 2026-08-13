@@ -4,6 +4,8 @@
 #
 #    pip-compile --output-file=requirements-build.lock --strip-extras requirements-build.in
 #
+editables==0.5
+    # via -r requirements-build.in
 hatchling==1.32.0
     # via -r requirements-build.in
 packaging==26.3
