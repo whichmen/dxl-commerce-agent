@@ -1,0 +1,22 @@
+[
+  {
+    "evidence_id": "SYN-EVIDENCE-0001",
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "customer_id": "CUST-1001",
+    "order_id": "SYN-ORDER-1003",
+    "media_type": "image/jpeg",
+    "scan_status": "clean",
+    "review_status": "verified"
+  },
+  {
+    "evidence_id": "SYN-EVIDENCE-0002",
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "customer_id": "CUST-0042",
+    "order_id": "SYN-ORDER-1001",
+    "media_type": "image/jpeg",
+    "scan_status": "clean",
+    "review_status": "verified"
+  }
+]

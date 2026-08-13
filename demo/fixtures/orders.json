@@ -1,0 +1,57 @@
+[
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "customer_id": "CUST-0042",
+    "order_id": "SYN-ORDER-1001",
+    "status": "shipped",
+    "paid_amount_cents": 12900,
+    "currency": "CNY",
+    "items": [{"sku": "SKU-JACKET-RED-M", "quantity": 1}],
+    "refund_status": "none"
+  },
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "customer_id": "CUST-0042",
+    "order_id": "SYN-ORDER-1002",
+    "status": "delivered",
+    "paid_amount_cents": 3999,
+    "currency": "CNY",
+    "items": [{"sku": "SKU-MUG-BLUE", "quantity": 1}],
+    "refund_status": "none"
+  },
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "customer_id": "CUST-1001",
+    "order_id": "SYN-ORDER-1003",
+    "status": "shipped",
+    "paid_amount_cents": 2599,
+    "currency": "CNY",
+    "items": [{"sku": "SKU-MUG-BLUE", "quantity": 1}],
+    "refund_status": "none"
+  },
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "customer_id": "CUST-1002",
+    "order_id": "SYN-ORDER-1004",
+    "status": "delivered",
+    "paid_amount_cents": 18800,
+    "currency": "CNY",
+    "items": [{"sku": "SKU-JACKET-RED-M", "quantity": 1}],
+    "refund_status": "pending"
+  },
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-002",
+    "customer_id": "CUST-2001",
+    "order_id": "SYN-ORDER-2001",
+    "status": "processing",
+    "paid_amount_cents": 49900,
+    "currency": "CNY",
+    "items": [{"sku": "SKU-LAMP-WHITE", "quantity": 1}],
+    "refund_status": "none"
+  }
+]

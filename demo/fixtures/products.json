@@ -1,0 +1,32 @@
+[
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "sku": "SKU-JACKET-RED-M",
+    "name": "Synthetic lightweight jacket",
+    "material": "100% synthetic demonstration fabric",
+    "care": "Machine wash cold on a gentle cycle",
+    "stock": 18,
+    "price_cents": 12900
+  },
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-001",
+    "sku": "SKU-MUG-BLUE",
+    "name": "Synthetic blue mug",
+    "material": "Demonstration ceramic",
+    "care": "Hand wash recommended",
+    "stock": 42,
+    "price_cents": 3999
+  },
+  {
+    "tenant_id": "demo",
+    "store_id": "STORE-002",
+    "sku": "SKU-LAMP-WHITE",
+    "name": "Synthetic desk lamp",
+    "material": "Demonstration aluminum and ABS",
+    "care": "Disconnect power before cleaning",
+    "stock": 7,
+    "price_cents": 49900
+  }
+]

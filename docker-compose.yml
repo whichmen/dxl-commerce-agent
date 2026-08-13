@@ -1,0 +1,27 @@
+services:
+  agent:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DXL_DATABASE_PATH: /app/data/demo.db
+      DXL_FIXTURE_DIR: /app/demo/fixtures
+      DXL_POLICY_PATH: /app/policies/default.toml
+      DXL_DEMO_MODE: "true"
+      DXL_OPERATOR_KEY: ${DXL_OPERATOR_KEY:-local-synthetic-demo-key}
+      DXL_PLANNER_MODE: ${DXL_PLANNER_MODE:-rules}
+      DXL_LLM_BASE_URL: ${DXL_LLM_BASE_URL:-}
+      DXL_LLM_MODEL: ${DXL_LLM_MODEL:-}
+      DXL_LLM_API_KEY: ${DXL_LLM_API_KEY:-}
+    volumes:
+      - dxl-demo-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  dxl-demo-data:

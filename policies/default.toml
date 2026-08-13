@@ -1,0 +1,8 @@
+[refunds]
+auto_approve_limit_cents = 500
+maximum_refund_cents = 50000
+require_evidence_for = ["damaged", "quality_issue", "wrong_item", "missing_item"]
+
+[runtime]
+max_tool_calls = 4
+max_history_turns = 8

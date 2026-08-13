@@ -1,0 +1,26 @@
+[
+  {
+    "order_id": "SYN-ORDER-1001",
+    "carrier": "Synthetic Express",
+    "tracking_id": "SYN-TRACK-9001",
+    "status": "in_transit",
+    "latest_event": "Departed the synthetic regional hub",
+    "updated_at": "2026-01-15T08:30:00+08:00"
+  },
+  {
+    "order_id": "SYN-ORDER-1002",
+    "carrier": "Synthetic Express",
+    "tracking_id": "SYN-TRACK-9002",
+    "status": "delivered",
+    "latest_event": "Delivered to the synthetic pickup point",
+    "updated_at": "2026-01-13T16:20:00+08:00"
+  },
+  {
+    "order_id": "SYN-ORDER-1003",
+    "carrier": "Example Logistics",
+    "tracking_id": "SYN-TRACK-9003",
+    "status": "exception",
+    "latest_event": "Weather delay at the synthetic transfer hub",
+    "updated_at": "2026-01-14T21:10:00+08:00"
+  }
+]
