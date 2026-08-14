@@ -4,7 +4,7 @@
 
 This repository implements the reusable customer-service runtime, safety boundaries, workers, connectors, tests, and Eval with synthetic data in its default local configuration. Private production code, platform automation details, credentials, prompts, customer records, and operating data are deliberately excluded.
 
-The private system I ran supported more than ten stores. From my own operating records, customer response time was usually around 0.5–2.5 minutes and the overall labor cost fell by about half. These are rough numbers from my own operation, not independently audited figures or performance claims for this public project.
+From my own operating records, routine pre-sales and after-sales support was automated, and customer response time was usually around 0.5–2.5 minutes. These are rough figures from my own operation, not independently audited measurements or performance claims for this public project.
 
 What anyone can reproduce here is narrower: 53 unit/integration tests and 50 deterministic synthetic Eval cases, all using made-up fixtures. They check this code; they do not prove the private-system numbers above.
 

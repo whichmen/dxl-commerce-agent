@@ -238,7 +238,7 @@ Real deployments use separately configured, authorized connectors plus the authe
 
 ## My production background
 
-I have built private customer-service automation across **Taobao, Pinduoduo, Douyin Ecommerce, Kuaishou Ecommerce, Xiaohongshu, and WeChat Channels**, including browser-side and mobile-side workflows. Those systems supported more than ten stores. In my day-to-day records, routine pre-sales and after-sales support was automated, customer response time was usually around 0.5–2.5 minutes, and overall labor cost was reduced by about half.
+I have built private customer-service automation across **Taobao, Pinduoduo, Douyin Ecommerce, Kuaishou Ecommerce, Xiaohongshu, and WeChat Channels**, including browser-side and mobile-side workflows. In my day-to-day records, routine pre-sales and after-sales support was automated, and customer response time was usually around 0.5–2.5 minutes.
 
 Those are rough figures from my own operation, not independently audited numbers, and they are not benchmarks for this repository. I did not copy production data or production source code into this project.
 
