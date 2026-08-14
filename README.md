@@ -178,6 +178,10 @@ This design is informed by lessons from a privately operated automation system. 
 
 Use this repository for learning, interviews, architecture review, and portfolio demonstration. Do not connect it to real accounts, customer data, or financial authority without implementing and reviewing the production-next controls above.
 
+## Contact
+
+For role or project discussions, contact Wei Zhang on WeChat: `whichmen`.
+
 ## License
 
 Released under the [MIT License](LICENSE). Third-party services and commerce platforms have their own terms; this license does not grant permission to bypass them.
