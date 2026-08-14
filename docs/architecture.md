@@ -9,7 +9,7 @@ DXL Commerce Agent is a small, fresh, sanitized reference implementation for a c
 3. deterministic permission and policy decisions;
 4. delivery reliability and inspectable execution state.
 
-The repository was newly written around synthetic fixtures. It contains no copied production source, customer data, credentials, platform connector, or private deployment topology.
+The repository was newly written around synthetic fixtures. Its Browser/Mobile connectors are clean-room simulators; it contains no copied production source, customer data, credentials, real platform connector, or private deployment topology.
 
 ## What the current code actually does
 
@@ -40,6 +40,34 @@ flowchart TB
 This is **structured intent plus deterministic runtime dispatch**, not native Function Calling. Neither planner sends a tool call to the runtime. Instead, it returns a `DecisionPlan`; trusted Python code maps the intent to a fixed path and supplies trusted tenant/store/customer context to the tool methods.
 
 The optional model is an intent planner, not an autonomous tool executor or response writer. Its output is parsed into known intent/entity fields. Transport or parse errors fall back to the deterministic rule planner. The final customer response is currently composed by deterministic templates.
+
+## Implemented clean-room channel pipeline
+
+```mermaid
+flowchart LR
+    BC[Synthetic Browser Connector] --> CI[ConnectorIngestor]
+    MC[Synthetic Mobile Connector] --> CI
+    CI --> IS[(SQLite inbox + cursor)]
+    IS --> CW[ConversationWorker]
+    CW --> AR[Single Agent Runtime]
+    AR --> AC[(Runtime decision / trace cache)]
+    AR --> CW
+    CW --> OB[(SQLite outbox)]
+    OB --> DW[DeliveryWorker]
+    DW --> BC
+    DW --> MC
+    BC --> RR[Synthetic receipt lookup]
+    RR --> DW
+    DW --> HS[(Handoff state)]
+    CS[ConnectorSupervisor] -. health snapshot .-> BC
+    CS -. health snapshot .-> MC
+```
+
+The connector binding supplies tenant, store, and channel identity outside each invented event. Ingestion verifies that scope, redacts text, and atomically commits a synthetic poll batch with a cursor compare-and-swap. `ChannelStore` retains normalized payload and connector-binding fingerprints, exposes only the oldest claimable row in each session, and uses local SQLite inbox/outbox records with 60-second fenced leases renewed every 20 seconds by active workers.
+
+`ConversationWorker` invokes the same runtime described above. Runtime decision/trace/cache finalization is one transaction; inbox completion plus deterministic outbox insertion is a later, separate transaction. A tested crash between them replays the cached decision without duplicating turns, then inserts the same outbox key.
+
+`DeliveryWorker` verifies the persisted binding snapshot, payload hash, session generation, and returned delivery key. It records confirmed synthetic Browser delivery, reconciles a simulated Browser timeout-after-commit through its in-memory receipt, retries Mobile only before a remote attempt, and sends an ambiguous or expired non-idempotent result to handoff without a blind retry. Explicit customer handoff increments local session generation, freezes queued automatic replies, enqueues one acknowledgement, and parks later inbound items. The two workers share a local per-session send lock; there is no real channel, cross-process send barrier, distributed queue, operator console, or production Watchdog. See [the complete customer-service architecture](customer-service-architecture.md).
 
 ## Implemented components
 
@@ -155,6 +183,15 @@ The tests and Eval exercise these current invariants:
 - messages in one process are serialized by session;
 - current messages and stored history redact the demonstrated phone/email patterns;
 - operator endpoints reject missing or incorrect shared demo keys.
+- synthetic connector identity fields come from immutable bindings rather than untrusted event metadata;
+- connector event/cursor persistence and inbox-completion/outbox insertion are locally atomic;
+- stale poll cursors and same-ID changed payloads fail closed;
+- stale inbox/outbox lease holders are fenced;
+- active worker leases renew and same-session inbox claims remain head-first in SQLite;
+- outbox binding, payload, session-generation, and returned delivery-key mismatches cannot confirm delivery;
+- Browser timeout-after-commit is reconciled without a second remote attempt;
+- ambiguous or expired non-idempotent Mobile delivery is held for explicit resolution without blind retry;
+- local human-active sessions freeze queued replies and park later synthetic inbound items.
 
 These are properties of this bounded synthetic implementation, not claims of production exactly-once delivery, comprehensive privacy protection, or distributed tenant isolation.
 
@@ -178,15 +215,18 @@ A future retriever should return source, tenant, version, and effective-date met
 
 | Area | Implemented here | Production-next |
 |---|---|---|
-| Ingress | Strict synthetic HTTP schema | Authenticated/signed channel adapters, rate limits, replay windows |
+| Ingress | Strict HTTP schema plus clean-room Browser/Mobile connector protocol and constructor bindings | Authenticated/signed real-channel adapters, rate limits, replay windows |
 | Planning | Rules plus optional structured OpenAI-compatible intent planner | Provider timeout/retry policy, budgets, rollout and model monitoring |
 | Dispatch | Fixed intent-to-code paths | Versioned tool registry only if the domain requires it |
 | Data | Scoped synthetic fixture lookups | Least-privilege tenant-scoped service APIs |
-| Ordering | In-process per-session lock plus fail-fast, expiring SQLite claim for an exact message ID | Durable partitioned queue and renewable distributed lease |
+| Channel queue | Local SQLite cursor CAS, head-of-session inbox claims, renewable fenced leases, outbox, and bounded retries | Managed partitioned queue, distributed leases, and multi-host session ordering |
+| Ordering | In-process per-session runtime lock plus fail-fast exact-message claim | Distributed per-session ordering |
+| Delivery | Binding/payload/key verification, synthetic Browser receipts, and non-idempotent ambiguity handoff | Durable provider receipts and authoritative real-channel reconciliation |
+| Handoff | Persistent generation, local send lock, acknowledgement, freezing/parking, resolution-gated release | Cross-process send barrier, authenticated human console, roles, SLA, notifications, and audited resume |
 | Writes | SQLite state machine and sandbox idempotency | Authoritative backend operation IDs and ambiguous-result reconciliation |
 | Privacy | Basic phone/email/token redaction | Reviewed DLP, encryption, deletion/retention and provider governance |
 | Responses | Deterministic grounded templates and API shape validation | Semantic grounding validator if model-generated replies are introduced |
-| Observability | Local trace plus selected SQLite audit events | Structured telemetry, access control, retention, alerting, incident workflow |
+| Observability | Local trace, selected SQLite audit events, and connector health snapshot | Production Watchdog, structured telemetry, access control, retention, alerting, incident workflow |
 | Evaluation | 50 deterministic synthetic offline cases | Governed failure sampling, adversarial sets, online monitoring, human review |
 
 Infrastructure should be added in response to measured reliability, scale, privacy, or governance needs—not merely to add framework vocabulary.

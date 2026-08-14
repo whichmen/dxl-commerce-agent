@@ -4,9 +4,9 @@
 
 This repository is a **fresh, privacy-safe reference implementation**. It turns engineering lessons into newly written code, synthetic fixtures, tests, and Eval cases without publishing the author's private production source, operational data, platform automation, credentials, prompts, or customer records.
 
-The author reports, in aggregate, that the private automation environment supported more than ten stores, six concurrent live rooms, more than twenty hours of generated media per day, and more than ten GPU-equipped machines. The author also reports customer-response times of approximately 0.5–2.5 minutes and an overall labor-cost reduction of about half. These figures are **approximate, self-reported, not independently audited, and not performance claims for this public repository**.
+The author reports, in aggregate, that the private commerce-support automation environment supported more than ten stores. The author also reports customer-response times of approximately 0.5–2.5 minutes and an overall labor-cost reduction of about half. These figures are **approximate, self-reported, not independently audited, and not performance claims for this public repository**.
 
-Reproducible evidence in this repository is narrower: 28 unit/integration tests and 50 deterministic synthetic Eval cases, all backed by synthetic fixtures. Those checks demonstrate bounded implementation behavior; they do not validate the private production figures.
+Reproducible evidence in this repository is narrower: 53 unit/integration tests and 50 deterministic synthetic Eval cases, all backed by synthetic fixtures. Those checks demonstrate bounded implementation behavior; they do not validate the private production figures.
 
 ## 1. Optimize for resolution, not agent count
 
@@ -36,7 +36,7 @@ The runtime goes one step further for the demonstrated refund flow: it separates
 
 Messages in one conversation may depend on order, while unrelated conversations should not block each other. The current code uses one in-process `asyncio.Lock` for each canonical session key. It also uses an expiring SQLite claim to ensure that two processes sharing the demo database do not both handle the exact same message ID; an active duplicate fails fast, and an abandoned claim can be reclaimed after 60 seconds.
 
-That is enough for deterministic local behavior, not for a horizontally scaled service. The SQLite claim does not order different messages in one session across processes or hosts, and it is not renewed during long work. A durable partitioned queue, renewable distributed lease, or equivalent ordering mechanism is production-next work.
+That base-runtime claim is enough to deduplicate one exact message, not to order different messages or renew ownership during long work. The optional clean-room channel path adds renewable fenced leases and head-of-line inbox/outbox claims for processes sharing one SQLite database. Neither design establishes ordering across hosts; a durable partitioned queue, renewable distributed lease, or equivalent ownership mechanism is production-next work.
 
 ## 6. At-least-once delivery demands several kinds of deduplication
 
@@ -45,6 +45,8 @@ The reference implementation demonstrates three distinct mechanisms:
 - a canonical message key plus expiring SQLite claim prevents concurrent handling of an exact redelivery and returns the cached decision after completion;
 - a canonical refund business key retains one action per scoped order;
 - a caller-provided execution idempotency key returns the recorded result when replayed.
+
+The clean-room channel path adds cursor compare-and-swap, changed-payload conflict detection, renewable fenced inbox/outbox leases, a stable delivery key, connector-binding snapshots, Browser receipt reconciliation, and `unknown` rather than automatic replay for an expired non-idempotent send.
 
 SQLite transaction locking and a unique index also prevent two included demo connections from completing one action twice.
 
@@ -79,7 +81,7 @@ A fluent answer can conceal a wrong tool, unsafe policy outcome, or missing sour
 - duplicate-message behavior;
 - absence of selected sensitive fragments in returned/persisted material.
 
-The current result is **50/50 synthetic cases passed with 0 tagged safety failures** under the deterministic rule planner. This is separate from the **28 unit/integration tests**, which directly exercise code contracts and edge conditions. Neither suite measures model cost, token use, real-service latency, customer satisfaction, or production resolution rate.
+The current result is **50/50 synthetic cases passed with 0 tagged safety failures** under the deterministic rule planner. This is separate from the **53 unit/integration tests**, which directly exercise runtime, connector/worker, inbox/outbox, handoff, receipt, and other code contracts and edge conditions. Neither suite measures model cost, token use, real-service latency, customer satisfaction, or production resolution rate.
 
 ## 10. Operational metrics need definitions
 
@@ -99,7 +101,13 @@ The demo protects trace, approval, and execution routes with `X-DXL-Operator-Key
 
 Production human approval needs authenticated operator identity, role-based authorization, tenant scope, separation of duties where required, session controls, and durable accountability. The Compose service binds to localhost to keep the demo exposure narrow; localhost binding is not itself authentication.
 
-## 12. Frameworks are replaceable; invariants are not
+## 12. Production experience and public clean-room boundary
+
+The author reports that the private customer-service system used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. After-sales action executors were deployed separately from message workers so message delivery did not automatically grant business-write authority.
+
+These are architecture-level experience statements, not claims about the public source. No platform name, selector, private interface address, device/account detail, production topology, or original adapter implementation is published. The public `BrowserConnector`, `MobileConnector`, inbox/outbox, receipt, and worker code is a newly written, fully synthetic clean-room implementation.
+
+## 13. Frameworks are replaceable; invariants are not
 
 LangGraph, MCP, Agent SDKs, and model function calling can improve development when their capabilities match a measured need. None automatically provides ownership validation, idempotency, policy enforcement, or auditability.
 
@@ -112,12 +120,14 @@ This repository intentionally implements those ideas with plain Python, FastAPI,
 | Structured intent plus fixed runtime dispatch | Native tool protocol only if dynamic discovery is needed |
 | Scoped synthetic reads | Authenticated, least-privilege commerce APIs |
 | Deterministic synthetic refund rules | Reviewed, versioned business/risk policy and regulatory controls |
-| Local message/action dedupe and SQLite idempotency | Durable distributed workflow plus external-backend reconciliation |
-| In-process session serialization plus an expiring exact-message SQLite claim | Partitioned durable queue and renewable distributed lease |
+| Local message/action dedupe, channel inbox/outbox, synthetic receipts, and SQLite idempotency | Durable distributed workflow plus real provider/backend reconciliation |
+| In-process session serialization, an expiring HTTP message claim, and renewable fenced channel inbox/outbox leases | Partitioned durable queue, renewable distributed lease, and multi-host session ordering |
+| Clean-room Browser/Mobile connectors and conservative ambiguous-delivery handoff | Platform-approved authenticated connectors and durable receipts |
+| Local human generation/send fence, acknowledgement, parking, explicit unknown resolution, and guarded release | Cross-process barrier, authenticated human console, roles, SLA, and audited resume |
 | Basic pre-planner and persistence redaction | Comprehensive DLP and lifecycle governance |
 | Shared demo operator key | Individual identity, roles, tenant authorization, approval accountability |
 | Deterministic templates and API shape validation | Semantic grounding validation if model-written responses are introduced |
-| 28 tests and 50-case offline synthetic Eval | Governed production telemetry, adversarial sets, human review, and incident feedback |
+| 53 tests and 50-case offline synthetic Eval | Governed production telemetry, adversarial sets, human review, and incident feedback |
 
 ## Practical evolution order
 

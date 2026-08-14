@@ -7,7 +7,7 @@
 > [!IMPORTANT]
 > 本仓库是为架构评审和作品集展示而**全新编写的脱敏参考实现**，不是作者私有生产系统的源码副本、镜像或历史快照。仓库中的顾客、店铺、订单、规则、对话、凭据占位符和评测案例全部是合成数据。
 
-[English](README.md) · [架构设计](docs/architecture.md) · [安全模型](docs/safety-model.md) · [生产经验](docs/production-lessons.md) · [安全报告](SECURITY.md)
+[English](README.md) · [架构设计](docs/architecture.md) · [完整客服目标架构](docs/customer-service-architecture.md) · [安全模型](docs/safety-model.md) · [生产经验](docs/production-lessons.md) · [安全报告](SECURITY.md)
 
 ## 当前实际实现
 
@@ -24,7 +24,10 @@
 - 可回收的 SQLite 消息租约、业务动作去重和执行幂等；
 - 单进程内按会话串行、不同会话并发；
 - SQLite 对话历史、脱敏 Trace、动作状态和部分审计事件；
-- 28 项单元/集成测试和 50 条确定性合成 Eval 案例。
+- 具有可信部署绑定的 clean-room 合成 Browser/Mobile Connector；
+- 本地持久化 SQLite inbox/cursor、带 fencing 的 inbox/outbox 租约和 `ConversationWorker`；
+- 稳定业务键 outbox、幂等的合成 Browser 交付、保守的 Mobile 不确定结果处理和显式人工接管状态；
+- 53 项单元/集成测试和 50 条确定性合成 Eval 案例。
 
 当前实现**没有使用模型原生 Function Calling**。规划器只输出 `logistics_status`、`refund_inquiry`、`refund_request` 等类型化意图；受信任的 Runtime 再决定允许调用哪些工具，并从顾客原始表达中重新推导退款订单、金额和影响规则的原因。项目也不依赖 LangGraph、MCP、RAG 或多 Agent 编排。
 
@@ -51,6 +54,8 @@ flowchart LR
 ```
 
 当前顾客消息会在送入任一规划器前进行脱敏，OpenAI-compatible 模式也不例外；被保存的近期对话同样经过脱敏。退款写路径必须同时包含一个明确订单号、完整匹配的动作短语以及严格金额（或明确全额退款）；问句、引用、否定、仅提及金额和异常正负号均默认拒绝。交易事实来自有顾客、店铺和租户作用域的合成工具，退款提案被拒绝、自动批准还是等待人工批准，由程序化规则而不是模型文字决定。
+
+可选的 clean-room 渠道链路覆盖更完整的交付闭环：合成 Connector 轮询 → 可信绑定 → SQLite inbox/cursor → `ConversationWorker` → 同一个单 Agent Runtime → outbox → `DeliveryWorker` → 合成回执或人工接管。它不包含真实平台协议、账号、浏览器配置、设备自动化或私有 Connector 源码。
 
 准确的请求生命周期和实现边界见[架构设计](docs/architecture.md)。
 
@@ -107,10 +112,23 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
 export DXL_OPERATOR_KEY=local-synthetic-demo-key
+```
+
+无需启动服务器即可运行全合成 Connector/Worker 链路：
+
+```bash
+dxl-agent-channel-demo
+```
+
+该命令把一个合成 Browser 事件和一个合成 Mobile 事件依次送入 inbox、Agent Runtime、outbox、交付和健康检查；同时模拟 Browser “提交后超时”，通过合成回执完成对账，且不会产生第二次远端尝试。
+
+另行启动 HTTP 服务：
+
+```bash
 dxl-commerce-agent
 ```
 
-本地命令监听 `127.0.0.1:8000`。启动前需要把设置导出到当前 Shell；只把 `.env.example` 复制成 `.env` 并不会生效，因为项目未使用 dotenv loader。
+本地 HTTP 服务监听 `127.0.0.1:8000`。启动前需要把设置导出到当前 Shell；只把 `.env.example` 复制成 `.env` 并不会生效，因为项目未使用 dotenv loader。
 
 交互式 API 文档位于 `http://127.0.0.1:8000/docs`。
 
@@ -138,7 +156,7 @@ python scripts/secret_scan.py
 
 | 检查 | 结果 | 证明范围 |
 |---|---:|---|
-| 单元/集成测试 | **28 passed** | Runtime、API、SQLite 并发、规则、脱敏、作用域与幂等的确定性代码行为 |
+| 单元/集成测试 | **53 passed** | Runtime、API、clean-room Connector/Worker、本地 SQLite 顺序与租约、规则、脱敏、作用域、回执、人工接管与幂等的确定性代码行为 |
 | 合成离线 Eval | **50/50 passed；0 safety failures** | 版本化合成场景中的意图、工具轨迹、事实依据字段、规则结果、去重、隔离、畸形输入处理和脱敏 |
 
 测试和 Eval 不是同一件事。测试检查实现契约和边界条件；Eval 回放业务行为案例，并对结构化响应与 Trace 评分。两者都不是生产性能基准、模型通用能力基准或合规证明。
@@ -147,10 +165,12 @@ python scripts/secret_scan.py
 
 | 本仓库已实现 | 接入真实业务前需要补齐 |
 |---|---|
-| 合成 Fixture 与仅限沙箱的退款 | 平台许可且经过身份认证的业务连接器 |
-| Pydantic API 校验与带作用域的查询参数 | 真实身份认证、授权、Webhook 校验和严格租户边界 |
-| 单进程会话锁及快速失败、可回收的 SQLite 消息认领 | 面向多进程/多地域顺序保证的持久分区队列和可续期分布式租约 |
-| SQLite 消息/动作去重、执行幂等、Trace 和部分审计事件 | 托管事务存储、加密、保留/访问控制及写操作结果不明确时的后端对账 |
+| Clean-room 合成 Browser/Mobile Connector 与仅限沙箱的退款 | 平台许可且经过身份认证的真实渠道和业务 Connector |
+| 构造时绑定的合成租户/店铺身份及带作用域的查询 | 密码学意义的 Connector 身份、授权、Webhook 校验和严格租户边界 |
+| 本地 SQLite inbox/cursor CAS、会话内 inbox/outbox 头部认领、可续期 fenced lease 与 `ConversationWorker` | 托管分区队列、可续期分布式租约及多主机会话顺序保证 |
+| 固化 binding 快照的 outbox、合成 Browser 回执、非幂等不确定结果等待人工对账 | 持久化供应商回执、真实交付对账、认证人工操作和外部写入对账 |
+| 会话 generation fence、本地发送锁、确认回复、消息停放和受保护释放 | 跨进程接管屏障、人工工作台、认证 Operator 流程、SLA 和事故集成 |
+| Connector 健康快照 | 生产 Watchdog、指标后端、告警和受控恢复 |
 | 规划前和持久化前的基础电话/邮箱/Token 脱敏 | 经审查的 DLP、数据最小化、模型供应商治理和删除流程 |
 | 封闭结构化意图解析与确定性降级 | 供应商超时、有限重试、熔断、预算、灰度策略和更完整的响应校验 |
 | 合成离线 Eval 与 CI 测试 | 受治理的生产遥测、抽样人工评审、对抗测试和事故响应 |
@@ -161,6 +181,7 @@ python scripts/secret_scan.py
 
 - 全新编写的参考代码与合成 Fixture；
 - 确定性规划、分发、规则、审批和沙箱执行；
+- Clean-room 合成 Connector、inbox/cursor、Worker、outbox、回执和人工接管状态；
 - 测试、离线 Eval、CI、容器配置和设计文档。
 
 仓库不包含：
@@ -173,7 +194,7 @@ python scripts/secret_scan.py
 
 ## 生产背景说明
 
-本设计参考了作者从私有自动化系统中总结的经验。按作者聚合后的自报数据，该私有系统曾支持 10 余家店铺、6 个并行直播间、每日生成 20 多个小时的素材，并运行于 10 余台配有 GPU 的机器；作者自报客服响应时间约为 0.5～2.5 分钟，人工成本约降低一半。这些数据均为**近似、自报、未经独立审计的背景信息，不是本公开仓库的性能基准或效果保证**。本仓库没有复制生产数据或生产源码。
+本设计参考了作者从私有电商客服自动化系统中总结的经验。按作者聚合后的自报数据，该私有系统曾支持 10 余家店铺；作者自报客服响应时间约为 0.5～2.5 分钟，人工成本约降低一半。这些数据均为**近似、自报、未经独立审计的背景信息，不是本公开仓库的性能基准或效果保证**。本仓库没有复制生产数据或生产源码。
 
 ## 使用边界
 

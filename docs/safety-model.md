@@ -43,9 +43,13 @@ The public `/v1/messages` endpoint does not authenticate the claimed tenant/cust
 | Inquiry mistaken for a write | `refund_inquiry` is a no-tool route; an anchored explicit-action grammar gates `refund_request` | The grammar covers only this synthetic Chinese demo |
 | Ambiguous money text | `Decimal` parsing rejects multiple, signed, over-precise, and oversized CNY amounts | Currency/locale handling is intentionally narrow |
 | Duplicate message/action | Expiring SQLite claim plus cached response for an exact message ID; one refund business key per scoped order | Different messages in one session are not ordered across processes or hosts |
+| Untrusted channel scope | Scope comes from immutable `ConnectorBinding`; inbox/outbox snapshot it and delivery rejects a changed binding | Binding is not authenticated production identity |
+| Duplicate channel delivery | Cursor CAS, payload conflict detection, head-of-session claims, renewable fenced leases, stable outbox keys, and Browser receipts | SQLite/in-memory simulators are not distributed provider guarantees |
+| Ambiguous Mobile result | Post-attempt ambiguity and expired non-idempotent leases become `unknown`; release is blocked until explicit resolution | No real device receipt/history reconciliation or authenticated reviewer |
+| Human takeover | Persistent generation plus a local session lock freeze queued sends and park later inbound events | The send barrier is not cross-process and there is no authenticated operator console or SLA workflow |
 | Duplicate execution | SQLite transaction, action state, idempotency record, and unique action index | There is no external backend to reconcile |
-| Same-session race | One `asyncio.Lock` per session | Locking is single-process only |
-| Basic PII persistence/provider exposure | Phone, email, and token-like text are redacted before persistence and planning | This is not comprehensive DLP |
+| Same-session race | Runtime and channel workers use local session locks; the channel inbox also exposes only the head row per session | HTTP ingress locking is single-process and the channel design is not multi-host |
+| Basic PII persistence/provider exposure | Phone, email, and token-like text are redacted before persistence and planning | This is not comprehensive DLP; synthetic inbox/outbox fields remain plaintext and have no retention/deletion workflow |
 | Sensitive operator routes | Shared `X-DXL-Operator-Key` required for trace/approve/execute | Shared key is not identity authentication or authorization |
 | Malformed HTTP request | Strict Pydantic request types, lengths, patterns, and forbidden extras | No rate limiter, WAF, malware scan, or signed webhook |
 
@@ -104,14 +108,22 @@ The current trace/audit implementation is not tamper-evident, append-only storag
 | Execution before approval | Returns conflict through the API |
 | Original execution idempotency key replayed | Returns the stored synthetic result with `deduplicated=true` |
 | Different execution key used after success | Returns conflict rather than executing again |
+| Stale connector poll | Cursor compare-and-swap fails; the newer cursor is not overwritten |
+| Duplicate channel event with changed content | Payload-fingerprint conflict; cursor transaction rolls back |
+| Browser timeout after synthetic commit | Receipt lookup confirms the original delivery key without another remote attempt |
+| Mobile retryable before remote attempt | Requeues with the same stable delivery key |
+| Mobile ambiguity after remote attempt or expired send lease | Marks `unknown`, activates handoff, and performs no automatic retry |
+| Connector binding, outbox payload hash, or returned delivery key mismatch | Cancels or marks unknown and activates handoff; never records success |
+| Human handoff in the local demo | Advances session generation, freezes queued automatic replies, and parks later inbox items |
+| Resume with an unresolved unknown delivery | Rejected until explicit synthetic manual resolution |
 
-Generic tool retries, external-write timeout handling, a circuit breaker, token/cost budgets, rate limiting, human takeover state, and audit-sink fail-closed behavior are not implemented.
+Generic business-tool retries, external-write timeout handling, a circuit breaker, token/cost budgets, rate limiting, an authenticated human console, and audit-sink fail-closed behavior are not implemented. The clean-room channel path does implement bounded inbox/outbox retries, local human-active state, synthetic receipt handling, and conservative ambiguous-delivery handoff.
 
 ## Verification boundary
 
 At the documented repository snapshot:
 
-- **28 unit/integration tests** exercise code contracts across runtime, policy, API protection, redaction, SQLite concurrency, scoping, and idempotency.
+- **53 unit/integration tests** exercise code contracts across runtime, policy, API protection, clean-room connectors/workers, inbox/outbox leases, synthetic receipts, handoff, redaction, SQLite concurrency, scoping, and idempotency.
 - **50/50 deterministic synthetic Eval cases pass with 0 tagged safety failures**. Eval replays versioned customer scenarios and checks selected intent, status, required/forbidden tool names, policy fields, grounding-field names, trace steps, malformed refund inputs, deduplication, and absence of specified sensitive fragments.
 
 Unit/integration tests and Eval are different evidence. Tests directly exercise implementation behavior and edge cases; Eval grades structured runtime trajectories for synthetic scenarios. Passing either does not establish production security, model robustness, compliance, latency, cost, or business outcomes.

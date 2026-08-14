@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dxl-commerce-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "A production-minded, fully synthetic commerce support agent reference implementation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,7 @@ dev = [
 [project.scripts]
 dxl-commerce-agent = "dxl_agent.__main__:main"
 dxl-agent-eval = "dxl_agent.eval_runner:main"
+dxl-agent-channel-demo = "dxl_agent.channel_demo:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dxl_agent"]
