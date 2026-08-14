@@ -1,28 +1,28 @@
-# Production Lessons Behind the Reference Design
+# What I Learned Building Customer-Service Automation
 
-## Evidence boundary
+## Where these lessons came from
 
-This repository is a **fresh, privacy-safe reference implementation**. It turns engineering lessons into newly written code, synthetic fixtures, tests, and Eval cases without publishing the author's private production source, operational data, platform automation, credentials, prompts, or customer records.
+I wrote this public project from scratch with synthetic data. It lets me show the engineering ideas without publishing private production code, platform automation, credentials, prompts, customer records, or operating data.
 
-The author reports, in aggregate, that the private commerce-support automation environment supported more than ten stores. The author also reports customer-response times of approximately 0.5–2.5 minutes and an overall labor-cost reduction of about half. These figures are **approximate, self-reported, not independently audited, and not performance claims for this public repository**.
+The private system I ran supported more than ten stores. From my own operating records, customer response time was usually around 0.5–2.5 minutes and the overall labor cost fell by about half. These are rough numbers from my own operation, not independently audited figures or performance claims for this public project.
 
-Reproducible evidence in this repository is narrower: 53 unit/integration tests and 50 deterministic synthetic Eval cases, all backed by synthetic fixtures. Those checks demonstrate bounded implementation behavior; they do not validate the private production figures.
+What anyone can reproduce here is narrower: 53 unit/integration tests and 50 deterministic synthetic Eval cases, all using made-up fixtures. They check this code; they do not prove the private-system numbers above.
 
 ## 1. Optimize for resolution, not agent count
 
 A commerce customer wants a correct answer or completed action. Multiple agents discussing one bounded request do not inherently improve correctness. A single decision loop with narrow tools and a deterministic policy boundary is often easier to observe and operate.
 
-The repository therefore uses one planner contract and one runtime. It does not use multi-agent orchestration. A future production system might separate independently scheduled domains—such as proactive logistics monitoring or refund audit—but they should communicate through explicit events and permissions rather than participate in every live reply.
+I therefore use one planner contract and one runtime here, not a group of agents talking to each other. A larger system may split out independent jobs such as logistics monitoring or refund audits, but those jobs should communicate through clear events and permissions instead of joining every customer reply.
 
 ## 2. Separate planning from dispatch
 
 Model-native Function Calling is useful in some systems, but it is not the only way to build an agent. In this implementation, the planner returns a structured `DecisionPlan`; trusted runtime code maps that intent onto a fixed tool path.
 
-That detail matters in a portfolio: this repository demonstrates typed intent planning and deterministic runtime dispatch, **not native function calling**. The optional OpenAI-compatible provider cannot directly name or execute a tool, and deterministic rules remain available without a model key.
+That distinction matters when reading the code: this project uses typed intent planning and fixed runtime dispatch, **not native function calling**. The optional OpenAI-compatible planner cannot directly name or run a tool, and the rule planner still works without a model key.
 
 ## 3. Transaction facts belong in transactional systems
 
-Models should not remember order state, and document retrieval should not guess it. Orders, logistics, payment, inventory, and refund outcomes change and require exact ownership constraints. The reference runtime therefore obtains facts from tenant/store/customer-scoped synthetic tools.
+Models should not remember order state, and document retrieval should not guess it. Orders, logistics, payment, inventory, and refund outcomes keep changing. My runtime reads those facts from synthetic tools scoped to one tenant, store, and customer.
 
 RAG can help with large unstructured corpora such as manuals, policy explanations, or troubleshooting guides. It should be a read-only evidence source rather than a substitute for transaction APIs or an authority to approve a side effect. RAG is not implemented in this repository.
 
@@ -36,21 +36,21 @@ The runtime goes one step further for the demonstrated refund flow: it separates
 
 Messages in one conversation may depend on order, while unrelated conversations should not block each other. The current code uses one in-process `asyncio.Lock` for each canonical session key. It also uses an expiring SQLite claim to ensure that two processes sharing the demo database do not both handle the exact same message ID; an active duplicate fails fast, and an abandoned claim can be reclaimed after 60 seconds.
 
-That base-runtime claim is enough to deduplicate one exact message, not to order different messages or renew ownership during long work. The optional clean-room channel path adds renewable fenced leases and head-of-line inbox/outbox claims for processes sharing one SQLite database. Neither design establishes ordering across hosts; a durable partitioned queue, renewable distributed lease, or equivalent ownership mechanism is production-next work.
+That base-runtime claim can deduplicate one exact message, but it does not order different messages or renew a long job. The synthetic channel path adds renewable fenced leases and head-of-line inbox/outbox claims for processes sharing one SQLite database. It still cannot guarantee order across machines; a real deployment needs a partitioned queue, distributed lease, or similar ownership mechanism.
 
 ## 6. At-least-once delivery demands several kinds of deduplication
 
-The reference implementation demonstrates three distinct mechanisms:
+The demo uses three different mechanisms:
 
 - a canonical message key plus expiring SQLite claim prevents concurrent handling of an exact redelivery and returns the cached decision after completion;
 - a canonical refund business key retains one action per scoped order;
 - a caller-provided execution idempotency key returns the recorded result when replayed.
 
-The clean-room channel path adds cursor compare-and-swap, changed-payload conflict detection, renewable fenced inbox/outbox leases, a stable delivery key, connector-binding snapshots, Browser receipt reconciliation, and `unknown` rather than automatic replay for an expired non-idempotent send.
+The synthetic channel path adds cursor compare-and-swap, changed-payload conflict detection, renewable fenced inbox/outbox leases, a stable delivery key, connector-binding snapshots, Browser receipt checks, and `unknown` instead of automatic replay for an expired non-idempotent send.
 
 SQLite transaction locking and a unique index also prevent two included demo connections from completing one action twice.
 
-The harder production case is an external write whose result is unknown after a timeout. A real service must reconcile against the authoritative backend operation before retrying. That reconciliation is a design lesson and a **production-next requirement; it is not implemented by this synthetic executor**.
+The harder case is a real write that times out after the remote side may have accepted it. Before retrying, a live service has to check the backend's own operation record. This synthetic executor has no real backend, so it does not implement that step.
 
 ## 7. Redact before the model, not only before logs
 
@@ -93,7 +93,7 @@ Statements such as “automatically resolved” or “no failures” are not use
 - message-send success from business-action completion;
 - average latency from tail latency.
 
-The public project intentionally does not convert the author's approximate private-system background into a benchmark. Its reproducible measurements are the versioned tests and synthetic Eval cases described above.
+I do not present my rough private-system figures as a benchmark. The only numbers anyone can reproduce here are the versioned tests and synthetic Eval cases above.
 
 ## 11. Shared secrets are not operator identity
 
@@ -101,37 +101,37 @@ The demo protects trace, approval, and execution routes with `X-DXL-Operator-Key
 
 Production human approval needs authenticated operator identity, role-based authorization, tenant scope, separation of duties where required, session controls, and durable accountability. The Compose service binds to localhost to keep the demo exposure narrow; localhost binding is not itself authentication.
 
-## 12. Production experience and public clean-room boundary
+## 12. What came from my private system
 
-The author reports that the private customer-service system used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. After-sales action executors were deployed separately from message workers so message delivery did not automatically grant business-write authority.
+In my private customer-service system, I used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. I deployed after-sales action executors separately from message workers, so a worker that sent messages did not automatically get permission to change orders or refunds.
 
-These are architecture-level experience statements, not claims about the public source. No platform name, selector, private interface address, device/account detail, production topology, or original adapter implementation is published. The public `BrowserConnector`, `MobileConnector`, inbox/outbox, receipt, and worker code is a newly written, fully synthetic clean-room implementation.
+That paragraph describes my experience; it does not mean the private adapters are in this repository. I did not publish platform names, selectors, private addresses, device/account details, my deployment layout, or the original adapter code. The public `BrowserConnector`, `MobileConnector`, inbox/outbox, receipt, and worker code is new synthetic code written for this demo.
 
 ## 13. Frameworks are replaceable; invariants are not
 
 LangGraph, MCP, Agent SDKs, and model function calling can improve development when their capabilities match a measured need. None automatically provides ownership validation, idempotency, policy enforcement, or auditability.
 
-This repository intentionally implements those ideas with plain Python, FastAPI, Pydantic, and SQLite. Its job is to make the control flow easy to inspect. Framework adoption can follow if workflow complexity, interoperability, or scale justifies it.
+I used plain Python, FastAPI, Pydantic, and SQLite so the control flow stays easy to inspect. I would add a framework later only if the workflow, integrations, or scale made it useful.
 
-## Implemented now vs production-next
+## What works here and what I would add next
 
-| Implemented now | Production-next |
+| What works in this repo | What a real deployment still needs |
 |---|---|
 | Structured intent plus fixed runtime dispatch | Native tool protocol only if dynamic discovery is needed |
 | Scoped synthetic reads | Authenticated, least-privilege commerce APIs |
 | Deterministic synthetic refund rules | Reviewed, versioned business/risk policy and regulatory controls |
 | Local message/action dedupe, channel inbox/outbox, synthetic receipts, and SQLite idempotency | Durable distributed workflow plus real provider/backend reconciliation |
 | In-process session serialization, an expiring HTTP message claim, and renewable fenced channel inbox/outbox leases | Partitioned durable queue, renewable distributed lease, and multi-host session ordering |
-| Clean-room Browser/Mobile connectors and conservative ambiguous-delivery handoff | Platform-approved authenticated connectors and durable receipts |
+| Synthetic Browser/Mobile connectors and cautious ambiguous-delivery handoff | Platform-approved authenticated connectors and durable receipts |
 | Local human generation/send fence, acknowledgement, parking, explicit unknown resolution, and guarded release | Cross-process barrier, authenticated human console, roles, SLA, and audited resume |
 | Basic pre-planner and persistence redaction | Comprehensive DLP and lifecycle governance |
 | Shared demo operator key | Individual identity, roles, tenant authorization, approval accountability |
 | Deterministic templates and API shape validation | Semantic grounding validation if model-written responses are introduced |
-| 53 tests and 50-case offline synthetic Eval | Governed production telemetry, adversarial sets, human review, and incident feedback |
+| 53 tests and 50-case offline synthetic Eval | Real production metrics, adversarial sets, human review, and incident feedback |
 
 ## Practical evolution order
 
-For a small team, a defensible order is:
+For a small team, I would add things in this order:
 
 1. reliable scoped tools and deterministic business policy;
 2. message/action deduplication and idempotent writes;
@@ -142,4 +142,4 @@ For a small team, a defensible order is:
 7. specialized asynchronous agents only where lifecycle boundaries justify them;
 8. fine-tuning only when Eval data identifies a stable, valuable error class.
 
-The principle is simple: add complexity in response to measured failure or business need, not to satisfy a vocabulary checklist.
+My rule is simple: add complexity when a measured failure or business need calls for it, not just to tick off a list of fashionable terms.

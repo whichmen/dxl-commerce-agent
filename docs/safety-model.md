@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document describes the implemented safeguards and explicit limits of the public reference repository. The project is a **fresh, sanitized implementation** with synthetic fixtures and sandbox-only actions. It is a portfolio artifact, not a security certification or production-ready customer-service system.
+This page lists the safety checks that are actually in the public code and the important things it still does not do. I wrote the project with synthetic fixtures and sandbox-only actions. It is a runnable portfolio project, not a security certification or a production-ready customer-service system.
 
 ## Safety objective
 
@@ -19,7 +19,7 @@ Untrusted inputs include:
 - tenant, channel, store, customer, message, and approver labels received by this demo API;
 - environment variables and local configuration.
 
-Trusted code in this bounded implementation includes:
+Trusted code in this demo includes:
 
 - Pydantic request/response models;
 - canonical scoped-key construction;
@@ -29,7 +29,7 @@ Trusted code in this bounded implementation includes:
 - SQLite state transitions and idempotency checks;
 - basic redaction and trace construction.
 
-The public `/v1/messages` endpoint does not authenticate the claimed tenant/customer context. Scoping prevents one supplied context from reading a different fixture record, but it does not prove who the caller is. Real identity and authenticated context construction are production-next requirements.
+The public `/v1/messages` endpoint does not authenticate the claimed tenant/customer context. Scoping stops one supplied context from reading a different fixture record, but it does not prove who the caller is. A real service still needs authenticated identity and trusted context construction.
 
 ## Current controls
 
@@ -77,7 +77,7 @@ The implemented sandbox refund flow is:
 
 The model cannot approve or execute its own proposal. The executor never contacts a financial or commerce platform.
 
-An ambiguous external write, timeout reconciliation, and authoritative backend operation lookup are **not implemented** because there is no external write backend. They are mandatory production-next design work before real side effects are enabled.
+Ambiguous external writes and backend timeout checks are **not implemented** because this demo has no external write backend. Those checks are required before enabling real side effects.
 
 ## Prompt-injection stance
 
@@ -117,18 +117,18 @@ The current trace/audit implementation is not tamper-evident, append-only storag
 | Human handoff in the local demo | Advances session generation, freezes queued automatic replies, and parks later inbox items |
 | Resume with an unresolved unknown delivery | Rejected until explicit synthetic manual resolution |
 
-Generic business-tool retries, external-write timeout handling, a circuit breaker, token/cost budgets, rate limiting, an authenticated human console, and audit-sink fail-closed behavior are not implemented. The clean-room channel path does implement bounded inbox/outbox retries, local human-active state, synthetic receipt handling, and conservative ambiguous-delivery handoff.
+Generic business-tool retries, external-write timeout handling, a circuit breaker, token/cost budgets, rate limiting, an authenticated human console, and audit-sink fail-closed behavior are not implemented. The synthetic channel path does include limited inbox/outbox retries, local human-active state, synthetic receipt handling, and cautious handoff when delivery is unclear.
 
 ## Verification boundary
 
 At the documented repository snapshot:
 
-- **53 unit/integration tests** exercise code contracts across runtime, policy, API protection, clean-room connectors/workers, inbox/outbox leases, synthetic receipts, handoff, redaction, SQLite concurrency, scoping, and idempotency.
+- **53 unit/integration tests** cover the runtime, policy, API protection, synthetic connectors/workers, inbox/outbox leases, synthetic receipts, handoff, redaction, SQLite concurrency, scoping, and idempotency.
 - **50/50 deterministic synthetic Eval cases pass with 0 tagged safety failures**. Eval replays versioned customer scenarios and checks selected intent, status, required/forbidden tool names, policy fields, grounding-field names, trace steps, malformed refund inputs, deduplication, and absence of specified sensitive fragments.
 
 Unit/integration tests and Eval are different evidence. Tests directly exercise implementation behavior and edge cases; Eval grades structured runtime trajectories for synthetic scenarios. Passing either does not establish production security, model robustness, compliance, latency, cost, or business outcomes.
 
-## Production-next controls
+## What I would add before real use
 
 Before using real accounts, data, or financial authority, add and independently review:
 

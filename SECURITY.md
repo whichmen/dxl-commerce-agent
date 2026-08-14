@@ -2,15 +2,15 @@
 
 ## Supported versions
 
-DXL Commerce Agent is an educational, portfolio-oriented reference project. Security fixes are applied only to the latest revision of the default branch; older revisions are not maintained as supported releases.
+This is a portfolio project, not a released product. I only maintain the latest version on the default branch.
 
 ## Repository boundary
 
-This repository is a **fresh, sanitized reference implementation**. Only newly written reference code and synthetic data belong here. Contributions must not contain production source copied from a private system, real conversations, logs, databases, screenshots, prompts, cookies, browser profiles, platform identifiers, credentials, private endpoints, or historical Git objects containing such material.
+I rewrote this public version from scratch and filled it with synthetic data. I do not put private production code, real conversations, logs, databases, screenshots, prompts, cookies, browser profiles, platform identifiers, credentials, private endpoints, or old Git history from the live system in this repository.
 
-The included secret scan covers a small set of high-confidence credential patterns. It is useful defense in depth, not proof that a repository contains no secret or personal data. Review staged files and Git history before publishing.
+The secret scanner catches several common credential patterns, but it cannot prove that every file is safe. I still review staged files and Git history before pushing.
 
-If a live secret is ever committed, deleting it in a later commit is not sufficient. Revoke or rotate it immediately, remove it from all published history, and review access logs and downstream copies.
+If a real secret is ever committed, deleting it in a later commit is not enough. Revoke or rotate it, remove it from published history, and check access logs and downstream copies.
 
 ## Reporting a vulnerability
 
@@ -23,7 +23,7 @@ Do not open a public issue containing:
 - real customer, merchant, order, or payment information;
 - a private service address or production topology.
 
-Include the affected revision, impact, and minimal reproduction steps using synthetic data. A suggested mitigation is welcome. The maintainer offers no guaranteed response time or bounty program.
+Include the affected revision, impact, and a small reproduction using synthetic data. A suggested fix is welcome. I do not promise a response time or run a bounty program for this demo.
 
 ## Security properties implemented in the demo
 
@@ -37,15 +37,15 @@ Include the affected revision, impact, and minimal reproduction steps using synt
 - strict `Decimal` CNY parsing that rejects ambiguous or malformed amounts;
 - operator-key protection for trace, approval, and execution routes;
 - Compose port publication restricted to `127.0.0.1:8000`;
-- 28 unit/integration tests and a separate 50-case deterministic synthetic Eval suite.
+- 53 unit/integration tests and a separate 50-case deterministic synthetic Eval suite.
 
 The optional OpenAI-compatible mode receives the redacted current message, not the original text. Recent history sent to it is also sourced from redacted stored turns.
 
-## Deliberate limits
+## What this demo does not cover
 
 `X-DXL-Operator-Key` is one shared demo key. It does not establish a person's identity, role, authorization, tenant membership, or approval authority. The public message endpoint also does not authenticate its claimed tenant/customer context. Localhost-only Compose binding narrows network exposure but does not make the service production-safe.
 
-The repository does not implement production-ready:
+This public demo does not include:
 
 - signed webhooks, user authentication, operator identity, or authorization;
 - distributed locks, durable queues, or multi-region ordering;
@@ -57,8 +57,8 @@ The repository does not implement production-ready:
 - immutable audit storage, operational monitoring, or incident-response integration;
 - regulatory compliance or platform certification.
 
-Unit/integration tests verify implementation contracts. Synthetic Eval grades selected runtime responses and traces. Passing 28 tests and 50/50 Eval cases is useful reproducible evidence for this bounded demo, not a production security guarantee or compliance result.
+The unit/integration tests check code behavior. The synthetic Eval checks selected replies and traces. Passing 53 tests and 50/50 Eval cases shows that this demo behaves as documented; it is not a security certification or a production guarantee.
 
 ## Deployment warning
 
-Do not connect real customer accounts, personal data, or financial permissions until the production-next controls in [the safety model](docs/safety-model.md) have been designed, implemented, tested, and independently reviewed. Use only platform-approved interfaces and least-privilege credentials.
+Do not connect real customer accounts, personal data, or payment permissions to this demo. Before using the design in a real system, finish and review the missing controls listed in [the safety model](docs/safety-model.md). Use approved platform interfaces and give every credential only the permissions it needs.

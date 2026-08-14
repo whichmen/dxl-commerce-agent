@@ -1,37 +1,37 @@
 # DXL Commerce Agent
 
-A privacy-safe, production-minded commerce-support agent reference implementation.
+This is a runnable customer-service Agent project I built for my portfolio. It shows how I handle the parts around an LLM that actually matter in a real system: message intake, tool calls, order and logistics lookups, refund checks, duplicate prevention, delivery retries, human handoff, traces, tests, and Eval.
 
 [![CI](https://github.com/whichmen/dxl-commerce-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/whichmen/dxl-commerce-agent/actions/workflows/ci.yml)
 
 > [!IMPORTANT]
-> This is a **fresh, sanitized reference implementation** built for architecture review and portfolio demonstration. It is not a source dump, mirror, or historical snapshot of the author's private production system. Every customer, store, order, policy, conversation, credential placeholder, and evaluation case in this repository is synthetic.
+> I rebuilt this public version from scratch so people can read it, run it, and discuss the design with me. It is not a copy of my private production code. All customers, stores, orders, policies, conversations, credentials, connectors, and Eval cases in this repository are synthetic.
 
-[中文说明](README_CN.md) · [Architecture](docs/architecture.md) · [Customer-service target architecture](docs/customer-service-architecture.md) · [Safety model](docs/safety-model.md) · [Production lessons](docs/production-lessons.md) · [Security](SECURITY.md)
+[中文说明](README_CN.md) · [Architecture](docs/architecture.md) · [Customer-service architecture](docs/customer-service-architecture.md) · [Safety model](docs/safety-model.md) · [What I learned in production](docs/production-lessons.md) · [Security](SECURITY.md)
 
-## What is implemented
+## What I built
 
-The repository demonstrates the engineering around a model, rather than presenting a chatbot-only demo:
+This is more than a chatbot demo. The repository includes:
 
 - a FastAPI service with strict request and response models;
-- a deterministic rule planner that runs without a model key;
-- an optional OpenAI-compatible planner that returns a closed, structured intent;
-- deterministic runtime dispatch from that intent to scoped commerce tools;
+- a rule-based planner that works without a model key;
+- an optional OpenAI-compatible planner that returns a small, typed intent;
+- runtime code that maps the intent to a limited set of commerce tools;
 - synthetic order, logistics, product, and evidence lookups;
-- deterministic refund policy, explicit approval, and sandbox-only execution;
-- a separate `refund_inquiry` route plus a fail-closed, anchored command grammar before free text may create a sandbox refund proposal;
-- strict `Decimal`-based CNY parsing that rejects multiple, signed, over-precise, or oversized amounts;
+- refund rules, explicit approval, and sandbox-only execution;
+- a separate `refund_inquiry` route and a strict command grammar before free text can create a refund proposal;
+- `Decimal`-based CNY parsing that rejects multiple, signed, over-precise, or oversized amounts;
 - reclaimable SQLite message leases, business-action deduplication, and execution idempotency;
-- per-session serialization within one process;
-- SQLite-backed dialogue history, redacted traces, actions, and selected audit events;
-- clean-room synthetic Browser and Mobile connectors with trusted deployment bindings;
-- a local durable SQLite inbox/cursor, fenced inbox/outbox leases, and `ConversationWorker`;
-- a stable-key outbound outbox, idempotent synthetic Browser delivery, conservative Mobile ambiguity handling, and explicit human-handoff state;
+- one-at-a-time processing for each conversation inside a process;
+- SQLite-backed redacted conversation history, traces, actions, and audit events;
+- newly written Browser and Mobile simulators with synthetic events and connector-to-store bindings;
+- a durable local inbox and cursor, fenced inbox/outbox leases, and a `ConversationWorker`;
+- stable outbound keys, idempotent synthetic Browser delivery, cautious handling of ambiguous Mobile delivery, and explicit human handoff;
 - 53 unit/integration tests and 50 deterministic synthetic Eval cases.
 
-This implementation does **not** use native model function calling. The planner emits a typed intent such as `logistics_status`, `refund_inquiry`, or `refund_request`; trusted runtime code then chooses the allowed tools and derives the refund order, amount, and policy-relevant reason from the customer message. It also does not require LangGraph, MCP, RAG, or multi-agent orchestration.
+I did not use native model function calling here. The planner returns a typed intent such as `logistics_status`, `refund_inquiry`, or `refund_request`. My runtime then chooses the allowed tools and reads the order, amount, and reason from the customer message. The main path also does not depend on LangGraph, MCP, RAG, or a multi-agent framework.
 
-## Architecture at a glance
+## How it works
 
 ```mermaid
 flowchart LR
@@ -53,19 +53,23 @@ flowchart LR
     E[50-case synthetic Eval] -. replays .-> R
 ```
 
-The current customer message is redacted before either planner sees it, including in OpenAI-compatible mode. Stored recent history is redacted as well. A refund write path requires one explicit order ID, an anchored action phrase, and a strict amount (or explicit full-refund phrase); questions, quoted examples, negations, bare amount mentions, and malformed signed amounts fail closed. Transaction facts come from scoped synthetic tools, while policy code—not model prose—decides whether a refund proposal is denied, automatically approved, or held for operator approval.
+I redact the current message before either planner sees it, including in OpenAI-compatible mode. Stored history is redacted too. A refund request needs one clear order ID, an action phrase, and a valid amount or an explicit full-refund phrase. Questions, quoted examples, negations, bare amount mentions, and malformed signed amounts fail closed. Tools provide the transaction facts; ordinary code decides whether a refund is denied, approved automatically, or sent to a person for approval.
 
-The optional clean-room channel path exercises the larger delivery loop: synthetic connector polling → trusted binding → SQLite inbox/cursor → `ConversationWorker` → the same single Agent Runtime → outbox → `DeliveryWorker` → synthetic receipt or human handoff. It contains no real platform protocol, account, browser profile, device automation, or private connector code.
+There is also a complete local channel loop:
 
-See [Architecture](docs/architecture.md) for the exact request lifecycle and implementation boundaries.
+`synthetic connector → trusted binding → SQLite inbox/cursor → ConversationWorker → Agent Runtime → outbox → DeliveryWorker → synthetic receipt or human handoff`
 
-## Why tools instead of RAG for orders
+This loop is useful for testing worker behavior, but the connectors are synthetic. The repository does not contain a real platform protocol, account, browser profile, device-control script, selector, or private connector.
 
-Orders, logistics, refund status, prices, and inventory are mutable structured facts. They should come from an authoritative API or database through scoped tools. RAG can be useful for large unstructured corpora such as manuals or platform policies, but it should not replace a transactional system. RAG is therefore a possible production extension, not part of this repository's required path.
+For the detailed request flow and exact limits, see [Architecture](docs/architecture.md).
 
-## Quick start
+## Why I use tools instead of RAG for orders
 
-The default demo is deterministic, uses only synthetic fixtures, and needs no model API key.
+Order status, logistics, refunds, prices, and inventory keep changing. I read those facts from an API or database through limited tools. RAG is useful for large collections of documents such as product manuals or platform policies, but I would not use it as the source of truth for a transaction. That is why RAG is an optional future addition rather than a requirement in this demo.
+
+## Run it
+
+The default demo uses synthetic fixtures and does not need a model API key.
 
 ### Option A: Docker Compose
 
@@ -73,11 +77,11 @@ The default demo is deterministic, uses only synthetic fixtures, and needs no mo
 docker compose up --build
 ```
 
-Compose publishes the service only on `127.0.0.1:8000`; it is not exposed on every host interface. By default, Compose supplies the demo operator key `local-synthetic-demo-key`.
+Compose publishes the service on `127.0.0.1:8000` only. The default demo operator key is `local-synthetic-demo-key`.
 
-### 60-second curl walkthrough
+### Try one request with curl
 
-This sends a synthetic logistics question and then reads its redacted trace. `jq` is used only to display the JSON and extract the trace ID.
+This example sends a synthetic logistics question and then reads the redacted trace. `jq` is only used to display JSON and extract the trace ID.
 
 ```bash
 BASE_URL=http://127.0.0.1:8000
@@ -101,9 +105,9 @@ curl -sS "$BASE_URL/v1/traces/$TRACE_ID" \
   -H "X-DXL-Operator-Key: $OPERATOR_KEY" | jq .
 ```
 
-If you set `DXL_OPERATOR_KEY` in a repository-root `.env`, use that same value in the curl header. Docker Compose reads `.env` for variable interpolation. The Python application itself does **not** load `.env` files automatically.
+If you set `DXL_OPERATOR_KEY` in the repository-root `.env`, use the same value in the curl header. Compose reads `.env` when it fills in variables. The Python application itself does not load `.env` files automatically.
 
-`X-DXL-Operator-Key` is only a shared demo guard for trace, approval, and execution endpoints. It is not production identity authentication, user authorization, tenant authentication, or a replacement for signed webhooks/OIDC.
+`X-DXL-Operator-Key` is only a simple guard for this local demo's trace, approval, and execution endpoints. It is not real authentication or authorization.
 
 ### Option B: local editable install
 
@@ -114,13 +118,13 @@ python -m pip install -e '.[dev]'
 export DXL_OPERATOR_KEY=local-synthetic-demo-key
 ```
 
-Run the fully synthetic connector/worker pipeline without starting a server:
+Run the synthetic connector and worker pipeline without starting the HTTP server:
 
 ```bash
 dxl-agent-channel-demo
 ```
 
-The command processes one synthetic Browser event and one synthetic Mobile event through inbox, Agent Runtime, outbox, delivery, and health checks. It also simulates a Browser timeout-after-commit and reconciles it from the synthetic receipt without a duplicate remote attempt.
+The demo handles one synthetic Browser event and one synthetic Mobile event through the inbox, Agent Runtime, outbox, delivery, and health checks. It also simulates a Browser timeout after the remote side has accepted a message. The worker checks the synthetic receipt instead of sending the message a second time.
 
 Start the HTTP service separately:
 
@@ -128,21 +132,19 @@ Start the HTTP service separately:
 dxl-commerce-agent
 ```
 
-The editable HTTP service runs on `127.0.0.1:8000`. Export settings in the shell before starting it; copying `.env.example` to `.env` is not enough for this local Python command because no dotenv loader is used.
+The editable service listens on `127.0.0.1:8000`. Export settings in the shell before starting it. Copying `.env.example` to `.env` is not enough for this command because the Python application has no dotenv loader.
 
-The interactive API documentation is available at `http://127.0.0.1:8000/docs`.
+Open `http://127.0.0.1:8000/docs` for the interactive API page.
 
-| Method and path | Purpose | Access in this demo |
+| Method and path | What it does | Demo access |
 |---|---|---|
-| `GET /health` | Liveness and planner mode | Open |
-| `POST /v1/messages` | Process a synthetic customer message | Open demo ingress |
-| `GET /v1/traces/{trace_id}` | Read a redacted trajectory | Demo operator key |
-| `POST /v1/actions/{action_id}/approve` | Approve a gated sandbox refund | Demo operator key |
-| `POST /v1/actions/{action_id}/execute` | Execute an approved sandbox refund with `Idempotency-Key` | Demo operator key |
+| `GET /health` | Shows service health and planner mode | Open |
+| `POST /v1/messages` | Handles a synthetic customer message | Open demo endpoint |
+| `GET /v1/traces/{trace_id}` | Reads a redacted trace | Demo operator key |
+| `POST /v1/actions/{action_id}/approve` | Approves a sandbox refund | Demo operator key |
+| `POST /v1/actions/{action_id}/execute` | Executes an approved sandbox refund with `Idempotency-Key` | Demo operator key |
 
-## Verification
-
-Run verification from the editable development environment:
+## Tests and Eval
 
 ```bash
 python -m pytest
@@ -152,58 +154,58 @@ ruff format --check .
 python scripts/secret_scan.py
 ```
 
-Verified repository snapshot:
+The current checked-in version has:
 
-| Check | Result | What it establishes |
-|---|---:|---|
-| Unit/integration tests | **53 passed** | Deterministic code behavior across runtime, API, clean-room connectors/workers, local SQLite ordering/leases, policy, redaction, scoping, receipts, handoff, and idempotency |
-| Synthetic offline Eval | **50/50 passed; 0 safety failures** | Expected intent, tool trajectory, grounding fields, policy outcomes, deduplication, isolation, malformed-input handling, and redaction on versioned synthetic scenarios |
+- **53 passing unit/integration tests** covering the runtime, API, synthetic connectors and workers, SQLite ordering and leases, refund policy, redaction, data scoping, receipts, handoff, and idempotency;
+- **50/50 passing synthetic Eval cases with 0 safety failures** covering intent, tool paths, grounded fields, policy results, deduplication, isolation, malformed input, and redaction.
 
-Tests and Eval are deliberately different. Tests exercise implementation contracts and edge cases. Eval replays behavioral scenarios and grades structured responses and traces. Neither result is a production benchmark, a model-quality benchmark, or proof of compliance.
+Tests check code behavior and edge cases. Eval replays fixed customer-service scenarios and grades the structured response and trace. These numbers describe this repository only; they are not production performance or model-quality benchmarks.
 
-## Implemented now vs production-next
+## What is real here, and what is still a demo
 
-| Implemented in this repository | Needed before real deployment |
+| In this repository | What I would add before a real deployment |
 |---|---|
-| Clean-room synthetic Browser/Mobile connectors and sandbox-only refunds | Platform-approved, authenticated real-channel and business connectors |
-| Constructor-bound synthetic tenant/store identity plus scoped lookup arguments | Cryptographic connector identity, authorization, webhook verification, and rigorous tenant enforcement |
-| Local SQLite inbox/cursor CAS, per-session inbox/outbox head-of-line claims, renewable fenced leases, and `ConversationWorker` | Managed partitioned queues and renewable distributed leases for multi-host/session ordering |
-| Binding-snapshotted outbox, synthetic Browser receipts, and non-idempotent ambiguity held for manual resolution | Durable provider receipts, real delivery reconciliation, authenticated human operations, and external-write reconciliation |
-| Session generation fence, local send lock, acknowledgement, parking, and guarded release | Cross-process handoff barrier, human-review console, authenticated operator workflow, SLA, and incident integration |
-| Connector health snapshots | Production Watchdog, metrics backend, alerting, and controlled recovery |
-| Basic phone/email/token redaction before planning and persistence | Reviewed DLP, data minimization, provider governance, and deletion workflows |
-| Closed structured-intent parser with deterministic fallback | Provider timeouts, bounded retries, circuit breaking, budgets, rollout controls, and broader response validation |
-| Synthetic offline Eval and CI tests | Governed production telemetry, sampled human review, adversarial testing, and incident response |
+| Synthetic Browser/Mobile connectors and sandbox-only refunds | Approved, authenticated platform and business connectors |
+| Each synthetic connector is tied to one tenant and store, and every lookup is scoped | Signed connector identity, real authorization, verified webhooks, and hard tenant boundaries |
+| SQLite cursor, inbox/outbox ordering, renewable fenced leases, and `ConversationWorker` | Partitioned queues and distributed leases for safe multi-machine processing |
+| Outgoing rows remember their connector binding; synthetic Browser receipts can confirm a send | Durable provider receipts, real delivery reconciliation, and authenticated human operations |
+| A session version fence, local send lock, acknowledgement, parking, and guarded handoff release | A cross-process send barrier, human-review console, SLA, and incident workflow |
+| Connector health snapshots | Monitoring, alerts, a watchdog, and controlled recovery |
+| Basic phone, email, and token redaction before planning and storage | Reviewed DLP, data minimization, provider governance, and deletion workflows |
+| A parser that accepts only known intent shapes, with a deterministic fallback | Timeouts, bounded retries, circuit breakers, budgets, rollout controls, and wider response validation |
+| Synthetic offline Eval and CI tests | Production telemetry, sampled human review, adversarial testing, and incident response |
 
-## Repository boundaries
+## Why the public version is sanitized
 
-Included:
+My private system connects to real customer-service workflows. Publishing that code as-is would expose details that do not belong on GitHub and could also break platform rules. I kept the architecture and the difficult engineering problems, then replaced the private pieces with runnable synthetic ones.
 
-- newly written reference code and synthetic fixtures;
-- deterministic planning, dispatch, policy, approval, and sandbox execution;
-- clean-room synthetic connectors, inbox/cursor, workers, outbox, receipts, and handoff state;
-- tests, offline Eval, CI, container configuration, and design documentation.
+This repository includes:
 
-Not included:
+- code I wrote specifically for this public demo;
+- synthetic fixtures, Browser/Mobile connectors, inbox/outbox workers, receipts, and handoff state;
+- deterministic planning, tool dispatch, refund policy, approval, and sandbox execution;
+- tests, offline Eval, CI, container files, and design notes.
+
+It does not include:
 
 - real platform automation or undocumented platform interfaces;
 - production source, prompts, cookies, browser profiles, databases, logs, or screenshots;
-- customer PII, merchant identifiers, private endpoints, or credentials;
-- proprietary operational rules or private deployment topology;
-- any claim that synthetic metrics equal production performance.
+- customer information, merchant identifiers, private addresses, or credentials;
+- private business rules or my real deployment layout;
+- any claim that synthetic results are the same as production results.
 
-## Production background disclosure
+Please do not point this demo at real accounts, customer data, or payment authority. Those need the real authentication, authorization, review, and monitoring listed above.
 
-This design is informed by lessons from a privately operated commerce-support automation system. The author reports, in aggregate, that the private system supported more than ten stores; reported customer-response times were roughly 0.5–2.5 minutes and labor cost was reduced by about half. These figures are **self-reported, approximate, not independently audited, and not benchmarks for this repository**. No production data or source code was copied here.
+## My production background
 
-## Intended use
+I designed this public project around problems I had already dealt with while running a private commerce-support automation system. That private system supported more than ten stores. In my own day-to-day records, customer response time was usually around 0.5–2.5 minutes, and the overall labor cost was reduced by about half.
 
-Use this repository for learning, interviews, architecture review, and portfolio demonstration. Do not connect it to real accounts, customer data, or financial authority without implementing and reviewing the production-next controls above.
+Those are rough figures from my own operation, not independently audited numbers, and they are not benchmarks for this repository. I did not copy production data or production source code into this project.
 
 ## Contact
 
-For role or project discussions, contact Wei Zhang on WeChat: `whichmen`.
+If you want to discuss an Agent/FDE role or a related project, my WeChat is `whichmen`.
 
 ## License
 
-Released under the [MIT License](LICENSE). Third-party services and commerce platforms have their own terms; this license does not grant permission to bypass them.
+This project uses the [MIT License](LICENSE). Third-party services and commerce platforms still have their own rules; this license does not give anyone permission to bypass them.

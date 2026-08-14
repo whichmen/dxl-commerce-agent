@@ -1,15 +1,15 @@
 # Architecture
 
-## Purpose and evidence boundary
+## What this repo is
 
-DXL Commerce Agent is a small, fresh, sanitized reference implementation for a commerce-support Agent Runtime. It separates four concerns that are often blurred in demos:
+I built DXL Commerce Agent as a small, runnable example of a commerce-support Agent Runtime. The code keeps four things separate:
 
 1. intent planning;
 2. authoritative business facts;
 3. deterministic permission and policy decisions;
 4. delivery reliability and inspectable execution state.
 
-The repository was newly written around synthetic fixtures. Its Browser/Mobile connectors are clean-room simulators; it contains no copied production source, customer data, credentials, real platform connector, or private deployment topology.
+I wrote this public version from scratch around made-up test data. The Browser and Mobile connectors are simulators. I did not copy over production source, customer data, credentials, real platform connectors, or private deployment details.
 
 ## What the current code actually does
 
@@ -41,7 +41,7 @@ This is **structured intent plus deterministic runtime dispatch**, not native Fu
 
 The optional model is an intent planner, not an autonomous tool executor or response writer. Its output is parsed into known intent/entity fields. Transport or parse errors fall back to the deterministic rule planner. The final customer response is currently composed by deterministic templates.
 
-## Implemented clean-room channel pipeline
+## Browser and mobile demo pipeline
 
 ```mermaid
 flowchart LR
@@ -83,7 +83,7 @@ Session and message keys are SHA-256 hashes of canonical JSON tuples. Tenant, ch
 
 Within one process, messages for the same session acquire the same `asyncio.Lock`; unrelated sessions may proceed concurrently. Before planning, the runtime atomically claims the scoped message key in SQLite. A completed replay returns the stored response with `deduplicated=true`; another worker encountering an active claim fails fast and the API returns `409` with `Retry-After: 1`. A claim abandoned by a crashed worker can be reclaimed after its 60-second lease expires.
 
-The local lease protects an exact message ID for processes sharing the same SQLite file. It does not serialize different message IDs in one session across processes, renew a long-running claim, provide distributed queueing, or coordinate multiple hosts. Those are production-next capabilities.
+The local lease protects one exact message ID when processes share the same SQLite file. It does not order different message IDs across processes, renew a long-running HTTP claim, provide a distributed queue, or coordinate multiple hosts. A real multi-host deployment still needs those pieces.
 
 ### Redaction and bounded history
 
@@ -140,7 +140,7 @@ Approval changes a pending action to `approved`. Execution requires both the dem
 
 Reusing the original idempotency key returns the recorded result. Trying a different key after success returns a conflict. The backend is a synthetic local executor that returns a synthetic refund ID; there is no real payment or platform call.
 
-The reference code does **not** implement uncertain-timeout reconciliation with an authoritative external backend. That belongs in production-next work.
+This code does **not** reconcile an uncertain timeout against a real external backend. That has to be added before enabling real writes.
 
 ### Trace and audit data
 
@@ -150,7 +150,7 @@ This is useful for demonstration and Eval, but it is not an immutable enterprise
 
 ### Response construction
 
-Customer replies are deterministic templates populated from tool/policy results. FastAPI validates the returned response shape through its response model. There is no separate, complete semantic response validator that proves every natural-language claim against provenance; adding one would be production-next work if responses become model-generated.
+Customer replies are deterministic templates filled with tool and policy results. FastAPI validates the response shape. There is no separate semantic checker that proves every sentence against its source. That becomes important if model-written replies are added later.
 
 ## Exact request lifecycle
 
@@ -211,11 +211,11 @@ unstructured guidance     -> optional read-only document retriever
 
 A future retriever should return source, tenant, version, and effective-date metadata. Retrieved text remains untrusted evidence and must not grant authority. The current repository does not implement this retriever.
 
-## Implemented vs production-next
+## What works here and what real use still needs
 
-| Area | Implemented here | Production-next |
+| Area | What works in this repo | What a real deployment still needs |
 |---|---|---|
-| Ingress | Strict HTTP schema plus clean-room Browser/Mobile connector protocol and constructor bindings | Authenticated/signed real-channel adapters, rate limits, replay windows |
+| Ingress | Strict HTTP schema plus synthetic Browser/Mobile connector protocol and constructor bindings | Authenticated/signed real-channel adapters, rate limits, replay windows |
 | Planning | Rules plus optional structured OpenAI-compatible intent planner | Provider timeout/retry policy, budgets, rollout and model monitoring |
 | Dispatch | Fixed intent-to-code paths | Versioned tool registry only if the domain requires it |
 | Data | Scoped synthetic fixture lookups | Least-privilege tenant-scoped service APIs |
@@ -227,6 +227,6 @@ A future retriever should return source, tenant, version, and effective-date met
 | Privacy | Basic phone/email/token redaction | Reviewed DLP, encryption, deletion/retention and provider governance |
 | Responses | Deterministic grounded templates and API shape validation | Semantic grounding validator if model-generated replies are introduced |
 | Observability | Local trace, selected SQLite audit events, and connector health snapshot | Production Watchdog, structured telemetry, access control, retention, alerting, incident workflow |
-| Evaluation | 50 deterministic synthetic offline cases | Governed failure sampling, adversarial sets, online monitoring, human review |
+| Evaluation | 50 deterministic synthetic offline cases | Real failure sampling, adversarial sets, online monitoring, and human review |
 
 Infrastructure should be added in response to measured reliability, scale, privacy, or governance needs—not merely to add framework vocabulary.
