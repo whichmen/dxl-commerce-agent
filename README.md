@@ -252,7 +252,7 @@ Those are rough figures from my own operation, not independently audited numbers
 
 ## Contact
 
-For technical discussion or project work, contact me on WeChat: `whichmen`.
+For technical discussion or other questions, contact me on WeChat: `whichmen`.
 
 ## License
 
