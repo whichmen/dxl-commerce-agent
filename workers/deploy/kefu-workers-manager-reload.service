@@ -1,0 +1,6 @@
+[Unit]
+Description=Reload DXL Commerce worker manager
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart kefu-workers-manager.service

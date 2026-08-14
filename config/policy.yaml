@@ -1,0 +1,36 @@
+manual:
+  keywords:
+    - "转人工"
+    - "投诉"
+    - "差评"
+    - "平台介入"
+    - "12315"
+    - "工商"
+    - "法院"
+    - "报警"
+
+categories:
+  logistics:
+    reply: "亲，已收到您的物流问题，我这边马上帮您催件并核对进度，请稍等。"
+    need_more: false
+    amount: 0
+
+  wrong_item:
+    reply: "亲，已收到您反馈的发错货问题。请发订单号+商品吊牌照片+实物全图，我这边马上核对发货回放，尽快给您处理方案。"
+    need_more: true
+    amount: 0
+
+  quality:
+    reply: "亲，已收到您反馈的质量问题。请发订单号+问题细节近照（至少2张），我这边核实后第一时间给您处理方案。"
+    need_more: true
+    amount: 0
+
+  unknown_image:
+    reply: "亲，图片已收到。请再补充订单号和问题描述（质量问题/发错货/物流问题），我马上为您处理。"
+    need_more: true
+    amount: 0
+
+  other:
+    reply: "亲，已收到您的消息，我这边正在核实处理，请稍等。"
+    need_more: false
+    amount: 0

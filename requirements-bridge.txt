@@ -1,0 +1,8 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+python-multipart>=0.0.9
+PyYAML>=6.0.0
+playwright>=1.40.0
+pycryptodome>=3.20.0
+Pillow>=10.0.0

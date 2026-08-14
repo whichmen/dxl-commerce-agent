@@ -1,0 +1,12 @@
+[Unit]
+Description=Run OpenClaw Agent Bridge kefu_ops active decision watchdog
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=3min
+AccuracySec=30s
+Persistent=true
+Unit=openclaw-agent-bridge-kefu-ops-watchdog.service
+
+[Install]
+WantedBy=timers.target

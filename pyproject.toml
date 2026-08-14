@@ -4,15 +4,20 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dxl-commerce-agent"
-version = "0.2.0"
-description = "A runnable and extensible commerce customer-service Agent runtime with durable workers, policy gates, human handoff, and offline evals"
+version = "1.0.0"
+description = "OpenClaw and LLM powered multi-platform ecommerce customer-service automation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Wei Zhang" }]
 dependencies = [
   "fastapi>=0.115,<1.0",
+  "Pillow>=10.0,<13.0",
+  "playwright>=1.40,<2.0",
   "pydantic>=2.8,<3.0",
+  "pycryptodome>=3.20,<4.0",
+  "python-multipart>=0.0.9,<1.0",
+  "PyYAML>=6.0,<7.0",
   "uvicorn[standard]>=0.30,<1.0",
 ]
 
@@ -27,17 +32,29 @@ dev = [
 ]
 
 [project.scripts]
-dxl-commerce-agent = "dxl_agent.__main__:main"
+dxl-commerce-agent = "kefu_clawbot.__main__:main"
+dxl-commerce-wecom-hub = "kefu_clawbot.wecom_hub_main:main"
+dxl-identity-service = "kefu_identity_service.__main__:main"
+dxl-offline-demo = "dxl_agent.__main__:main"
 dxl-agent-eval = "dxl_agent.eval_runner:main"
 dxl-agent-channel-demo = "dxl_agent.channel_demo:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dxl_agent"]
+packages = [
+  "src/dxl_agent",
+  "src/kefu_clawbot",
+  "src/kefu_tool_backend",
+  "src/kefu_identity_service",
+  "workers",
+]
 
 [tool.hatch.build.targets.wheel.force-include]
 "demo" = "demo"
 "evals" = "evals"
 "policies" = "policies"
+"config" = "config"
+"openclaw" = "openclaw"
+"examples" = "examples"
 
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers"

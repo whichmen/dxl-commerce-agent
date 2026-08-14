@@ -1,0 +1,3 @@
+# Copy to taobao_accounts.conf, replace placeholders locally, and chmod 600.
+# Never commit the populated file.
+#@taobao_web_login|taobao_store_example|示例淘宝店铺|<username>|<password>

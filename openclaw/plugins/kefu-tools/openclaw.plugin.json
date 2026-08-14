@@ -1,0 +1,35 @@
+{
+  "id": "kefu-tools",
+  "name": "Kefu Tools",
+  "description": "Customer-service native tools for kefu_ops.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string"
+      },
+      "apiKey": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "type": "number",
+        "minimum": 500,
+        "maximum": 120000
+      }
+    }
+  },
+  "uiHints": {
+    "baseUrl": {
+      "label": "Gateway Base URL",
+      "placeholder": "http://127.0.0.1:18080"
+    },
+    "apiKey": {
+      "label": "Gateway API Key",
+      "sensitive": true
+    },
+    "timeoutMs": {
+      "label": "HTTP Timeout (ms)"
+    }
+  }
+}

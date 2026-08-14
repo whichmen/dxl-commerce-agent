@@ -1,149 +1,106 @@
 # Safety Model
 
-## Scope
-
-This page lists the safety checks implemented in the repository and the controls that belong at the production integration boundary. The default local configuration uses synthetic fixtures and sandbox-only actions, so the full workflow is runnable without real customer accounts or financial authority. The document is an engineering control inventory, not a security certification.
-
-## Safety objective
-
-The current design aims to keep policy and side-effect decisions deterministic even when a planner is wrong, a message is delivered twice, or customer text contains instruction-like content. Model output is treated as a structured intent suggestion. Trusted runtime code selects the execution path, supplies scoped context, evaluates refund policy, and controls action state.
-
-The project does not use native model function calling. There is therefore no model-generated tool invocation to execute. The optional OpenAI-compatible provider only supplies intent/entity fields, while customer replies remain deterministic templates.
+The system lets an LLM choose tools and write replies, but it does not give the model every capability available on the host. The boundary has four layers: the Agent's tool list, the plugin schema, the authenticated Decision API, and backend business/allowlist checks.
 
 ## Trust boundaries
 
-Untrusted inputs include:
+```mermaid
+flowchart LR
+    U[Customer text and images] --> M[LLM: untrusted reasoning output]
+    M --> R[OpenClaw registered-tool boundary]
+    R --> P[kefu-tools schema and argument filtering]
+    P --> A[Authenticated tool API]
+    A --> B[Backend gates, business checks, and allowlists]
+    B --> S[ERP, identity, vision, files, or commands]
+```
 
-- customer text and supplied synthetic evidence identifiers;
-- output from either planner;
-- tenant, channel, store, customer, message, and approver labels received by the local API;
-- environment variables and local configuration.
+Customer content, model output, and tool arguments are treated as untrusted. Platform login state, API keys, ERP credentials, target product markers, filesystem roots, command allowlists, and write permissions belong to deployment configuration.
 
-Trusted code in the current implementation includes:
+## Default model permissions
 
-- Pydantic request/response models;
-- canonical scoped-key construction;
-- runtime intent dispatch and trusted-context attachment;
-- fixture ownership filtering;
-- deterministic refund policy;
-- SQLite state transitions and idempotency checks;
-- basic redaction and trace construction.
+The `kefu_ops` Agent gets only the `kefu-tools` plugin by default. OpenClaw's general built-in tool group is added only when `CLAWBOT_ENABLE_OPENCLAW_BUILTINS=1` is set before the setup script runs.
 
-The public `/v1/messages` endpoint does not authenticate the claimed tenant/customer context. Scoping stops one supplied context from reading a different fixture record, but it does not prove who the caller is. A real service still needs authenticated identity and trusted context construction.
+Four read-oriented tools are registered without extra feature flags:
 
-## Current controls
+- `order_lookup`
+- `logistics_lookup`
+- `refund_history_lookup`
+- `refund_case_lookup`
 
-| Risk | Implemented control | Important limit |
+Nine administrative, write, vision-compatibility, file, or command tools are absent from the model's tool list unless their exact flag is enabled. This matters: a prompt injection cannot call a tool that OpenClaw did not register.
+
+## Plugin argument controls
+
+Every registered tool uses an object schema with `additionalProperties: false`. The plugin also removes model-supplied values named `base_url`, `api_key`, `token`, `secret`, `password`, or `headers` before forwarding a call.
+
+For `refund_case_lookup`, `target_outer_id` is removed from model arguments and replaced only by the trusted `CLAWBOT_TARGET_OUTER_ID` environment value. This prevents a customer message or model decision from changing the deployment's special-order marker.
+
+The plugin calls `CLAWBOT_TOOL_BASE_URL` and supplies `CLAWBOT_TOOL_API_KEY`. Both values must be visible to the OpenClaw Gateway process; use `scripts/sync_openclaw_gateway_env.sh` and restart the gateway after changes.
+
+## Backend gates
+
+The Decision API repeats the important permission checks instead of trusting registration alone:
+
+| Capability | Registration/backend flag | Additional check |
 |---|---|---|
-| Planner proposes an unsafe path | Planner returns only a `DecisionPlan`; runtime owns deterministic dispatch and policy | This is not a general formal verifier |
-| Simple prompt-injection phrase | Rule planner recognizes a bounded marker set and returns no tool path | Marker detection is intentionally incomplete; authorization must not depend on it |
-| Cross-customer/store fixture lookup | Order/product/evidence tools filter trusted runtime arguments by available scope | API caller identity is not authenticated in the default local configuration |
-| Hallucinated transaction details | Replies use synthetic tool results and named `facts_used` fields | There is no standalone semantic response validator |
-| Unsafe refund | Code checks existing refund, amount, paid amount, maximum, evidence, and approval threshold | The included synthetic rules are examples, not legal/business policy |
-| Inquiry mistaken for a write | `refund_inquiry` is a no-tool route; an anchored explicit-action grammar gates `refund_request` | The built-in grammar covers only the included Chinese action forms |
-| Ambiguous money text | `Decimal` parsing rejects multiple, signed, over-precise, and oversized CNY amounts | Currency/locale handling is intentionally narrow |
-| Duplicate message/action | Expiring SQLite claim plus cached response for an exact message ID; one refund business key per scoped order | Different messages in one session are not ordered across processes or hosts |
-| Untrusted channel scope | Scope comes from immutable `ConnectorBinding`; inbox/outbox snapshot it and delivery rejects a changed binding | Binding is not authenticated production identity |
-| Duplicate channel delivery | Cursor CAS, payload conflict detection, head-of-session claims, renewable fenced leases, stable outbox keys, and Browser receipts | SQLite/in-memory simulators are not distributed provider guarantees |
-| Ambiguous Mobile result | Post-attempt ambiguity and expired non-idempotent leases become `unknown`; release is blocked until explicit resolution | No real device receipt/history reconciliation or authenticated reviewer |
-| Human takeover | Persistent generation plus a local session lock freeze queued sends and park later inbound events | The send barrier is not cross-process and there is no authenticated operator console or SLA workflow |
-| Duplicate execution | SQLite transaction, action state, idempotency record, and unique action index | There is no external backend to reconcile |
-| Same-session race | Runtime and channel workers use local session locks; the channel inbox also exposes only the head row per session | HTTP ingress locking is single-process and the channel design is not multi-host |
-| Basic PII persistence/provider exposure | Phone, email, and token-like text are redacted before persistence and planning | This is not comprehensive DLP; synthetic inbox/outbox fields remain plaintext and have no retention/deletion workflow |
-| Sensitive operator routes | Shared `X-DXL-Operator-Key` required for trace/approve/execute | Shared key is not identity authentication or authorization |
-| Malformed HTTP request | Strict Pydantic request types, lengths, patterns, and forbidden extras | No rate limiter, WAF, malware scan, or signed webhook |
+| Bulk after-sales query | `CLAWBOT_ENABLE_ADMIN_QUERY_TOOLS` | authenticated tool API |
+| Small-refund approval | `CLAWBOT_ENABLE_REFUND_WRITE_TOOL` | order type, paid amount, refund amount, and business-state validation |
+| Blacklist add/remove | `CLAWBOT_ENABLE_BLACKLIST_WRITE_TOOLS` | authenticated identity service |
+| Offline classification/review | `CLAWBOT_ENABLE_OFFLINE_ADMIN_TOOLS` | bounded input/output handling in backend |
+| Compatibility vision | `CLAWBOT_ENABLE_IMAGE_INSPECT_TOOL` | `CLAWBOT_IMAGE_INSPECT_ENABLED`, provider, and provider key |
+| Local file read | `CLAWBOT_ENABLE_FILE_READ_TOOL` | `CLAWBOT_FILE_READ_ROOTS` after resolving `..` and symlinks |
+| Shell command | `CLAWBOT_ENABLE_SHELL_EXEC_TOOL` | `CLAWBOT_SHELL_ALLOWED_COMMANDS` exact command or safe argument-prefix rule |
 
-## Planner data handling
+Setting an allowlist to `*` deliberately removes the corresponding restriction. Setting the file root to `/` has the same effect for file reads. Those values should only be used inside a separately isolated, disposable environment.
 
-Before invoking either planner, the runtime applies its basic redactor to the **current customer message**. This also applies in OpenAI-compatible mode. Recent history comes from redacted persisted turns, and the model adapter sends at most four recent entries truncated to 500 characters each plus a current message truncated to 2,000 characters.
+## API keys
 
-The built-in redactor covers Chinese mobile-number patterns, email patterns, and a limited set of bearer/API-key-like strings. It does not claim to cover names, addresses, payment data, international telephone formats, images, arbitrary identifiers, or all secret encodings.
+The services use different settings for different paths:
 
-## Actual side-effect protocol
+- `CLAWBOT_API_KEY` protects decision, prompt, OCR, ops, and delivery-ack routes when non-empty;
+- `CLAWBOT_TOOL_API_KEY` protects the tool and intercept routes when non-empty;
+- `IDENTITY_API_KEY` protects identity lookup/update and blacklist routes when non-empty;
+- optional Enterprise WeChat hub traffic uses its own key and signed callback validation.
 
-The implemented sandbox refund flow is:
+Replace every example value and do not reuse one key for all services. An empty key disables the corresponding shared-key check, so empty values are appropriate only for a tightly isolated local process. Shared keys authenticate a service caller; they do not provide individual operator identity, roles, or tenant membership.
 
-1. Route policy/status questions, quoted examples, and negations to `refund_inquiry`, which creates no action.
-2. For a write, require a full match against a closed action-command grammar and exactly one synthetic order ID explicitly present in the current customer message.
-3. Parse at most one explicit CNY amount with `Decimal`; signed, over-precise, oversized, or otherwise malformed values fail closed.
-4. Resolve that customer-selected order through the tenant/store/customer-scoped lookup, then derive the policy-relevant reason from the current message.
-5. Resolve evidence through matching tenant/store/customer/order scope when required.
-6. Evaluate deterministic amount, state, evidence, and approval rules.
-7. Deny without creating an action, or create/reuse one scoped refund action.
-8. Require the configured local operator key on approval and execution API calls.
-9. Require an approved state plus caller-generated `Idempotency-Key` to execute.
-10. Atomically record one synthetic result and change the action to `succeeded`.
-11. Return the recorded result when the original idempotency key is replayed; reject a different key after success.
+## Refund and after-sales actions
 
-The model cannot approve or execute its own proposal. The executor never contacts a financial or commerce platform.
+The model may decide that a refund tool is relevant, but backend code still controls execution. The included refund-approval tool is limited to the configured after-sales type and small amounts, checks the platform's current refund amount against paid amount, and returns an explicit failure when any condition is not met.
 
-Ambiguous external writes and backend timeout checks are **not implemented** because the repository has no external write backend. Those checks are required before enabling real side effects.
+The business Skill also instructs the model to verify the order and evidence before making customer-facing claims. The Skill improves behavior; the backend checks are the actual permission boundary. Any new financial or order-changing tool should follow the same design: separate registration flag, authenticated endpoint, deterministic validation, idempotency/reconciliation, and an audit record.
 
-## Prompt-injection stance
+## File and shell tools
 
-String detection is a bounded monitoring signal, not the primary authorization control. Even if the optional planner returns a mistaken intent, it cannot name or call an arbitrary tool. Trusted runtime code chooses among fixed branches, scopes lookup arguments, re-derives policy-relevant refund facts, and runs deterministic policy before creating a sandbox action.
+Both tools are off by default. Enabling a tool flag alone is not sufficient.
 
-There is no RAG or external free-text tool result in the current implementation. If either is added, returned text must remain data rather than instructions and must not expand runtime authority.
+`CLAWBOT_FILE_READ_ROOTS` accepts Linux `:`-separated roots or a JSON list. The backend resolves the requested target and symlinks before confirming that the real target remains under an allowed root.
 
-## Trace and audit handling
+`CLAWBOT_SHELL_ALLOWED_COMMANDS` is best supplied as a JSON array. A rule allows the exact command and, for a safe prefix, ordinary whitespace-separated arguments. Shell control syntax in an appended suffix is denied. Do not use broad interpreter entries such as `sh`, `bash`, `eval`, or `python -c` as prefixes.
 
-Traces contain a hashed public session identifier, status, structured steps, selected public tool arguments, and named grounding fields. Stored dialogue uses the basic redactor. Selected high-level action and trace events are also written to a local SQLite audit table.
+## Customer and merchant data
 
-The current trace/audit implementation is not tamper-evident, append-only storage with independent custody, and it has no retention schedule or role-based access. The shared operator key only prevents unauthenticated reads when it is configured; it does not identify an individual operator.
+The main SQLite database stores customer messages, model replies, event metadata, media references, decisions, and delivery receipts. The identity database stores platform nickname mappings and blacklist state. Browser profiles contain platform cookies. Media capture can include customer screenshots.
 
-## Actual failure behavior
+These files need normal data controls on a real deployment:
 
-| Condition | Current behavior |
-|---|---|
-| OpenAI-compatible transport or parse error | Falls back to the deterministic rule planner |
-| Exact duplicate already in flight | Fails fast with HTTP 409 and `Retry-After: 1`; an abandoned 60-second claim can later be reclaimed |
-| Unknown or unsupported intent | Returns a clarification or out-of-scope template without tools |
-| Scoped order/product not found | Returns a non-invented not-found/clarification response |
-| Refund-policy question or missing amount | Explains the configured sandbox rules or asks for a precise amount; no action is created |
-| Negative, over-precise, or excessively long refund amount | Fails closed with clarification; no action is created |
-| Missing required verified evidence | Policy denies; no action is created |
-| Refund above paid amount or policy maximum | Policy denies; no action is created |
-| Amount above auto-approval threshold | Stores `pending_approval`; execute is rejected until approval |
-| Missing/wrong local operator key | Operator endpoint returns 401; no configured key returns 503 |
-| Execution before approval | Returns conflict through the API |
-| Original execution idempotency key replayed | Returns the stored synthetic result with `deduplicated=true` |
-| Different execution key used after success | Returns conflict rather than executing again |
-| Stale connector poll | Cursor compare-and-swap fails; the newer cursor is not overwritten |
-| Duplicate channel event with changed content | Payload-fingerprint conflict; cursor transaction rolls back |
-| Browser timeout after synthetic commit | Receipt lookup confirms the original delivery key without another remote attempt |
-| Mobile retryable before remote attempt | Requeues with the same stable delivery key |
-| Mobile ambiguity after remote attempt or expired send lease | Marks `unknown`, activates handoff, and performs no automatic retry |
-| Connector binding, outbox payload hash, or returned delivery key mismatch | Cancels or marks unknown and activates handoff; never records success |
-| Human handoff in the local workflow | Advances session generation, freezes queued automatic replies, and parks later inbox items |
-| Resume with an unresolved unknown delivery | Rejected until explicit synthetic manual resolution |
+- keep `.env`, CSV mappings, Chrome profiles, SQLite files, media, logs, and Android configuration outside Git;
+- restrict their owner and filesystem permissions;
+- choose a retention and deletion policy instead of keeping them forever;
+- back up only what is needed and encrypt backups where appropriate;
+- check the selected model/provider's data handling before sending customer content;
+- avoid storing credentials or full customer data in prompts, Skills, source, or issue reports.
 
-Generic business-tool retries, external-write timeout handling, a circuit breaker, token/cost budgets, rate limiting, an authenticated human console, and audit-sink fail-closed behavior are not implemented. The synthetic channel path does include limited inbox/outbox retries, local human-active state, synthetic receipt handling, and cautious handoff when delivery is unclear.
+The current main path does not perform comprehensive DLP redaction before sending the prompt to the configured model. Deployments handling personal or regulated data should add the required redaction/minimization layer and test it against actual message formats.
 
-## Verification boundary
+## Platform and device boundaries
 
-At the documented repository snapshot:
+Browser workers use dedicated Chrome profiles and localhost CDP ports. Android workers require AccessibilityService and, for guard operations, ADB access. These are powerful local permissions.
 
-- **53 unit/integration tests** cover the runtime, policy, API protection, synthetic connectors/workers, inbox/outbox leases, synthetic receipts, handoff, redaction, SQLite concurrency, scoping, and idempotency.
-- **50/50 deterministic synthetic Eval cases pass with 0 tagged safety failures**. Eval replays versioned customer scenarios and checks selected intent, status, required/forbidden tool names, policy fields, grounding-field names, trace steps, malformed refund inputs, deduplication, and absence of specified sensitive fragments.
+Run each store/device under a dedicated OS account or container/VM where practical. Do not share one writable browser profile between unrelated workers. Restrict CDP, Decision API, identity API, and ADB to trusted networks or localhost, and use platform-authorized accounts and interfaces.
 
-Unit/integration tests and Eval are different evidence. Tests directly exercise implementation behavior and edge cases; Eval grades structured runtime trajectories for synthetic scenarios. Passing either does not establish production security, model robustness, compliance, latency, cost, or business outcomes.
+## What is checked automatically
 
-## Production integration checklist
+The current suite includes 72 unit/integration tests, 50 deterministic offline Eval cases, a high-confidence secret scan, Python syntax checks, wheel construction, and container construction. Tests cover the OpenClaw call boundary, request validation, tool registration/authorization, file/shell allowlists, identity service, and existing deterministic reliability components.
 
-Before using real accounts, data, or financial authority, add and independently review:
-
-- authenticated and signed channel ingress;
-- user/operator identity, authorization, roles, and tenant-bound trusted context;
-- platform-approved least-privilege connectors;
-- durable partitioned queues and renewable leases for cross-process ordering;
-- managed transactional storage and authoritative backend reconciliation;
-- comprehensive DLP, encryption, secrets management, retention, and deletion;
-- bounded provider timeouts/retries, circuit breaking, usage budgets, and rollout controls;
-- semantic response grounding checks if model-written responses are introduced;
-- rate limiting, abuse controls, attachment scanning, and availability protections;
-- immutable or independently protected audit telemetry, monitoring, and incident response;
-- legal, privacy, regulatory, and platform-policy review.
-
-## Reporting vulnerabilities
-
-Follow [SECURITY.md](../SECURITY.md). Do not place customer data, live credentials, private system details, or exploit material in a public issue.
+CI does not contain a live model account, real platform login, real ERP credential, or Android device. It therefore cannot prove live model quality, platform compatibility, customer-data compliance, or safe behavior for a newly enabled write tool. Those require deployment-specific checks and a staged rollout.

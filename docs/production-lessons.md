@@ -1,145 +1,116 @@
-# What I Learned Building Customer-Service Automation
+# What I Learned Building Ecommerce Customer-Service Agents
 
-## Where these lessons came from
+I built this system around one practical goal: handle real customer-service work reliably. The model matters, but the surrounding engineering decides whether a useful answer reaches the correct customer and whether a business action is safe.
 
-This repository implements the reusable customer-service runtime, safety boundaries, workers, connectors, tests, and Eval with synthetic data in its default local configuration. Private production code, platform automation details, credentials, prompts, customer records, and operating data are deliberately excluded.
+## 1. The model must be in the real path
 
-From my own operating records, routine pre-sales and after-sales support was automated, and customer response time was usually around 0.5–2.5 minutes. These are rough figures from my own operation, not independently audited measurements or performance claims for this public project.
+My default path uses OpenClaw and an LLM to understand the request, decide whether a tool is needed, read tool results, and write the final reply. A keyword classifier can help with statistics or fallback behavior, but it cannot replace language understanding for the variety of messages customers actually send.
 
-What anyone can reproduce here is narrower: 53 unit/integration tests and 50 deterministic synthetic Eval cases, all using made-up fixtures. They check this code; they do not prove the private-system numbers above.
+The code therefore makes the distinction explicit:
 
-## 1. Optimize for resolution, not agent count
+- `agent` mode is the normal path: model + Skill + native tools + final model response;
+- `policy` mode is a fixed-rule fallback and container smoke path.
 
-A commerce customer wants a correct answer or completed action. Multiple agents discussing one bounded request do not inherently improve correctness. A single decision loop with narrow tools and a deterministic policy boundary is often easier to observe and operate.
+Calling both of these “Planner” hides an important difference. A fixed planner can route a few known phrases; it cannot produce the same answer quality as a configured model with current business facts.
 
-I therefore use one planner contract and one runtime here, not a group of agents talking to each other. A larger system may split out independent jobs such as logistics monitoring or refund audits, but those jobs should communicate through clear events and permissions instead of joining every customer reply.
+## 2. One Agent can still have a real tool loop
 
-## 2. Separate planning from dispatch
+I do not need several agents just to call several tools. One `kefu_ops` Agent can run multiple internal turns:
 
-Model-native Function Calling is useful in some systems, but it is not the only way to build an agent. In this implementation, the planner returns a structured `DecisionPlan`; trusted runtime code maps that intent onto a fixed tool path.
+```text
+understand request -> call order tool -> inspect result -> call logistics tool -> write reply
+```
 
-That distinction matters when reading the code: this project uses typed intent planning and fixed runtime dispatch, **not native function calling**. The optional OpenAI-compatible planner cannot directly name or run a tool, and the rule planner still works without a model key.
+That is already an Agent loop. I would split another Agent out only when it has a genuinely separate lifecycle, permission set, queue, or owner—for example, proactive refund audit or long-running logistics monitoring.
 
-## 3. Transaction facts belong in transactional systems
+## 3. Rules belong in Skills; authority belongs in code
 
-Models should not remember order state, and document retrieval should not guess it. Orders, logistics, payment, inventory, and refund outcomes keep changing. My runtime reads those facts from synthetic tools scoped to one tenant, store, and customer.
+`kefu-core/SKILL.md` tells the model how I want customer-service cases handled: what to verify, which tool to call, what not to promise, and when to ask for more evidence. This makes behavior readable and easy to improve.
 
-RAG can help with large unstructured corpora such as manuals, policy explanations, or troubleshooting guides. It should be a read-only evidence source rather than a substitute for transaction APIs or an authority to approve a side effect. RAG is not implemented in this repository.
+Prompts and Skills are not authorization. Refund limits, tool registration, API authentication, filesystem roots, command allowlists, and merchant-owned markers still belong in trusted configuration and backend code.
 
-## 4. Policy must survive a bad planner decision
+## 4. Live facts should come from tools
 
-Prompts influence behavior but do not enforce authorization. Refund limits, allowed state, paid amount, evidence requirements, and approval thresholds belong in deterministic code or versioned configuration.
+Orders, shipment events, paid amounts, refund status, and inventory keep changing. The model should not remember or invent them. It should query the ERP or another authoritative system during the customer turn.
 
-The runtime goes one step further for the implemented sandbox refund flow: it separates `refund_inquiry` from `refund_request`, requires one order ID and a closed, anchored action command explicitly present in the customer message, and re-derives the amount and policy-relevant reason rather than trusting planner fields. Amount parsing uses `Decimal`, not binary floating point. Questions, quoted examples, negations, bare amount mentions, multiple amounts, suspicious signs, and over-precise values fail closed. Tests inject unsafe planners that attempt to change the order or downgrade the reason and confirm that the runtime preserves the customer-selected order and required evidence.
+RAG is useful for a different problem: searching large, mostly textual material such as product manuals, after-sales explanations, and platform policies. I would add RAG when that document volume creates a measured gap. It would remain read-only evidence, not a substitute for transaction APIs or permission checks.
 
-## 5. Serialize by conversation, not globally
+## 5. Platform automation is part of the product
 
-Messages in one conversation may depend on order, while unrelated conversations should not block each other. The current code uses one in-process `asyncio.Lock` for each canonical session key. It also uses an expiring SQLite claim to ensure that two processes sharing the local database do not both handle the exact same message ID; an active duplicate fails fast, and an abandoned claim can be reclaimed after 60 seconds.
+A good reply is useless if the system cannot reliably receive and send messages. That is why this repository includes browser workers, an Appium worker, Android AccessibilityService projects, local state, acknowledgements, health reporting, watchdog scripts, and systemd units.
 
-That base-runtime claim can deduplicate one exact message, but it does not order different messages or renew a long job. The synthetic channel path adds renewable fenced leases and head-of-line inbox/outbox claims for processes sharing one SQLite database. It still cannot guarantee order across machines; a real deployment needs a partitioned queue, distributed lease, or similar ownership mechanism.
+Different platforms require different mechanics:
 
-## 6. At-least-once delivery demands several kinds of deduplication
+- browser customer-service consoles work well with dedicated Chrome profiles, CDP, and Playwright;
+- mobile apps may need Appium/UiAutomator2 or a purpose-built AccessibilityService;
+- an API-based page flow and a DOM-based page flow fail in different ways;
+- login expiry, popups, page upgrades, and device disconnects need explicit health states instead of silent retries.
 
-The implementation uses three different mechanisms:
+I keep the normalized Decision API contract stable so platform-specific changes do not require rewriting the Agent.
 
-- a canonical message key plus expiring SQLite claim prevents concurrent handling of an exact redelivery and returns the cached decision after completion;
-- a canonical refund business key retains one action per scoped order;
-- a caller-provided execution idempotency key returns the recorded result when replayed.
+## 6. “Model answered” is not “customer received it”
 
-The synthetic channel path adds cursor compare-and-swap, changed-payload conflict detection, renewable fenced inbox/outbox leases, a stable delivery key, connector-binding snapshots, Browser receipt checks, and `unknown` instead of automatic replay for an expired non-idempotent send.
+I track three separate stages:
 
-SQLite transaction locking and a unique index also prevent two concurrent connections from completing one action twice.
+1. the Decision API obtained an Agent result;
+2. the worker attempted the platform send;
+3. the worker acknowledged what was actually sent.
 
-The harder case is a real write that times out after the remote side may have accepted it. Before retrying, a live service has to check the backend's own operation record. This synthetic executor has no real backend, so it does not implement that step.
+The `/v1/worker/ack` path and delivery table make this distinction visible. It is much easier to diagnose a slow model, broken selector, expired login, or failed send when those stages are not collapsed into one success counter.
 
-## 7. Redact before the model, not only before logs
+## 7. Conversation identity and ordering are easy to get wrong
 
-The current message is redacted before either planner sees it, including in OpenAI-compatible mode. Persisted recent history is redacted too. This reduces accidental propagation of the phone, email, and token-like patterns covered by the built-in redactor.
+The session key includes the platform, store, and platform nickname. Same-session requests take an in-process lock, while duplicate message IDs can reuse the stored decision. Workers also keep platform-local state for their own intake and send loops.
 
-Production privacy needs much more: identity-aware data minimization, broad DLP, attachment handling, provider review, encryption, retention, deletion, and audit access controls. A few regular expressions are evidence of the boundary, not a privacy guarantee.
+This is appropriate for the current single-host layout. It is not a distributed exactly-once claim. A multi-host deployment needs durable partitioning, cross-host ownership, and authoritative reconciliation for writes whose remote outcome is uncertain.
 
-## 8. Memory has several meanings
+## 8. Images need evidence discipline
 
-Recent conversation turns, transaction state, workflow state, and semantic memory are not interchangeable:
+The main image path sends the original attachment to the model. If that path is unsupported, the bridge can create an isolated image summary and retry the main conversation with the summary.
 
-- bounded recent turns help carry local conversational context;
-- order/refund truth belongs in business storage;
-- action state supports approval and idempotent execution;
-- semantic retrieval memory is optional and must not become transaction truth.
+The important rule is simple: unreadable content stays unreadable. The model should ask for a clearer screenshot instead of guessing an order ID, clothing code, damage state, or same-item result. Any ID read from an image still needs verification through an order tool before it becomes a customer-facing fact.
 
-The repository implements the first three in a local SQLite-backed runtime. It does not implement vector memory or RAG.
+## 9. Powerful tools should be absent until enabled
 
-## 9. Evaluate the trajectory, not only the final sentence
+The Agent receives four normal read tools by default. Refund approval, blacklist changes, batch jobs, file reads, and shell execution are not merely discouraged in a prompt; they are not registered until a deployment flag enables them.
 
-A fluent answer can conceal a wrong tool, unsafe policy outcome, or missing source fact. The offline Eval runner therefore checks structured behavior such as:
+The backend checks the same high-risk categories again. File and shell tools also require explicit allowlists. This keeps the normal customer Agent useful without giving every conversation the full power of the host machine.
 
-- expected intent and final status;
-- required and forbidden tool names;
-- policy outcome and reason code;
-- named facts used in the reply;
-- required trace steps;
-- duplicate-message behavior;
-- absence of selected sensitive fragments in returned/persisted material.
+## 10. Model and Gateway environment are separate processes
 
-The current result is **50/50 synthetic cases passed with 0 tagged safety failures** under the deterministic rule planner. This is separate from the **53 unit/integration tests**, which directly exercise runtime, connector/worker, inbox/outbox, handoff, receipt, and other code contracts and edge conditions. Neither suite measures model cost, token use, real-service latency, customer satisfaction, or production resolution rate.
+The Decision service reads the repository `.env`. The OpenClaw plugin runs in the Gateway process and therefore needs its own environment. Missing this distinction produces a confusing failure: the Agent can see a tool name but cannot authenticate to the tool backend.
 
-## 10. Operational metrics need definitions
+I added `scripts/sync_openclaw_gateway_env.sh` to copy only the 14 plugin-related `CLAWBOT_*` names into `~/.openclaw/.env` without printing values or replacing unrelated OpenClaw settings. The Gateway must be restarted after a change.
 
-Statements such as “automatically resolved” or “no failures” are not useful until their denominator, time window, workflow scope, and failure definition are explicit. A production dashboard should distinguish:
+## 11. Identity mapping deserves its own small service
 
-- model/tool success from customer issue resolution;
-- temporary retry from unrecovered failure;
-- planned escalation from silent abandonment;
-- message-send success from business-action completion;
-- average latency from tail latency.
+The nickname visible on one platform does not always match the identity used by the order system. I separated that mapping into `kefu_identity_service`, with its own database, API key, lookup endpoint, import script, and blacklist compatibility endpoints.
 
-I do not present my rough private-system figures as a benchmark. The only numbers anyone can reproduce here are the versioned tests and synthetic Eval cases above.
+That avoids teaching the model a private mapping and makes updates auditable. Ambiguous or missing mappings can be surfaced as data problems instead of guessed by the LLM.
 
-## 11. Shared secrets are not operator identity
+## 12. Eval should check behavior, not only fluent prose
 
-The default local configuration protects trace, approval, and execution routes with `X-DXL-Operator-Key`. This prevents accidental open access during local operation, but every holder has the same authority and the supplied approver is only an audit label.
+A polished sentence can still use the wrong order, skip a required tool, or cross a permission boundary. The repository keeps deterministic offline cases alongside unit/integration tests. The current validation reports 72 passing tests and 50/50 passing offline Eval cases with no tagged safety failures.
 
-Production human approval needs authenticated operator identity, role-based authorization, tenant scope, separation of duties where required, session controls, and durable accountability. The Compose service binds to localhost to keep the default exposure narrow; localhost binding is not itself authentication.
+CI mocks the live OpenClaw/model boundary because it has no provider account. I still need a live smoke check after configuring a provider, because mocked boundary tests cannot measure answer quality, tool-choice quality, latency, cost, or provider-specific image handling.
 
-## 12. What came from my private system
+## 13. Operational numbers need a defined source
 
-In my private customer-service system, I used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. I deployed after-sales action executors separately from message workers, so a worker that sent messages did not automatically get permission to change orders or refunds.
+My actual customer-service operation covered Taobao, Pinduoduo, Douyin Ecommerce, Kuaishou Ecommerce, Xiaohongshu, and WeChat Channels across browser and mobile workflows. In my operating records, routine pre-sales and after-sales work was handled automatically, and customer response time was usually about 0.5–2.5 minutes.
 
-That paragraph describes my experience; it does not mean the private adapters are in this repository. I did not publish private selectors, addresses, device/account details, deployment topology, or original adapter code. The repository's `BrowserConnector`, `MobileConnector`, inbox/outbox, receipt, and worker modules are clean implementations built around synthetic events and documented integration contracts.
+Those numbers describe my operation. Repository test counts and offline Eval results describe this code. Keeping the two sources separate makes both statements more useful.
 
-## 13. Frameworks are replaceable; invariants are not
+## The order I would extend the system
 
-LangGraph, MCP, Agent SDKs, and model function calling can improve development when their capabilities match a measured need. None automatically provides ownership validation, idempotency, policy enforcement, or auditability.
+For a small team, I would usually invest in this order:
 
-I used plain Python, FastAPI, Pydantic, and SQLite so the control flow stays easy to inspect. I would add a framework later only if the workflow, integrations, or scale made it useful.
+1. keep platform workers and business tools stable;
+2. add real delivery and external-write reconciliation;
+3. add per-user operator identity, roles, and a human handoff console;
+4. add privacy controls, monitoring, cost/latency dashboards, and staged rollout;
+5. expand Eval with sampled failures from actual traffic;
+6. add RAG when document lookup is a real bottleneck;
+7. add specialized Agents only when their workflow and permissions are truly separate;
+8. fine-tune a smaller model only after Eval shows a stable, high-volume error class worth training away.
 
-## What works here and what I would add next
-
-| What works in this repo | What a real deployment still needs |
-|---|---|
-| Structured intent plus fixed runtime dispatch | Native tool protocol only if dynamic discovery is needed |
-| Scoped synthetic reads | Authenticated, least-privilege commerce APIs |
-| Deterministic synthetic refund rules | Reviewed, versioned business/risk policy and regulatory controls |
-| Local message/action dedupe, channel inbox/outbox, synthetic receipts, and SQLite idempotency | Durable distributed workflow plus real provider/backend reconciliation |
-| In-process session serialization, an expiring HTTP message claim, and renewable fenced channel inbox/outbox leases | Partitioned durable queue, renewable distributed lease, and multi-host session ordering |
-| Synthetic Browser/Mobile connectors and cautious ambiguous-delivery handoff | Platform-approved authenticated connectors and durable receipts |
-| Local human generation/send fence, acknowledgement, parking, explicit unknown resolution, and guarded release | Cross-process barrier, authenticated human console, roles, SLA, and audited resume |
-| Basic pre-planner and persistence redaction | Comprehensive DLP and lifecycle governance |
-| Shared local operator key | Individual identity, roles, tenant authorization, approval accountability |
-| Deterministic templates and API shape validation | Semantic grounding validation if model-written responses are introduced |
-| 53 tests and 50-case offline synthetic Eval | Real production metrics, adversarial sets, human review, and incident feedback |
-
-## Practical evolution order
-
-For a small team, I would add things in this order:
-
-1. reliable scoped tools and deterministic business policy;
-2. message/action deduplication and idempotent writes;
-3. inspectable traces plus unit/integration tests and behavioral Eval;
-4. real identity, authorization, privacy, observability, and deployment controls;
-5. durable coordination and external-backend reconciliation;
-6. optional RAG for a measured unstructured-knowledge gap;
-7. specialized asynchronous agents only where lifecycle boundaries justify them;
-8. fine-tuning only when Eval data identifies a stable, valuable error class.
-
-My rule is simple: add complexity when a measured failure or business need calls for it, not just to tick off a list of fashionable terms.
+The framework name is less important than the result: correct facts, safe actions, reliable delivery, and a clear path for failures.

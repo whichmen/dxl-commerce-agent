@@ -1,0 +1,10 @@
+[Unit]
+Description=Reload DXL Commerce worker browser pages daily
+
+[Timer]
+OnCalendar=*-*-* 21:00:00
+Persistent=true
+Unit=kefu-worker-browser-reload.service
+
+[Install]
+WantedBy=timers.target

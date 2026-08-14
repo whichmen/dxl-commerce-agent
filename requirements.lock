@@ -16,22 +16,36 @@ click==8.4.2
     # via uvicorn
 fastapi==0.141.1
     # via dxl-commerce-agent (pyproject.toml)
+greenlet==3.5.5
+    # via playwright
 h11==0.16.0
     # via uvicorn
 httptools==0.8.0
     # via uvicorn
 idna==3.18
     # via anyio
+pillow==12.3.0
+    # via dxl-commerce-agent (pyproject.toml)
+playwright==1.62.0
+    # via dxl-commerce-agent (pyproject.toml)
+pycryptodome==3.23.0
+    # via dxl-commerce-agent (pyproject.toml)
 pydantic==2.13.4
     # via
     #   dxl-commerce-agent (pyproject.toml)
     #   fastapi
 pydantic-core==2.46.4
     # via pydantic
+pyee==13.0.1
+    # via playwright
 python-dotenv==1.2.2
     # via uvicorn
+python-multipart==0.0.32
+    # via dxl-commerce-agent (pyproject.toml)
 pyyaml==6.0.3
-    # via uvicorn
+    # via
+    #   dxl-commerce-agent (pyproject.toml)
+    #   uvicorn
 starlette==1.6.0
     # via fastapi
 typing-extensions==4.16.0
@@ -40,6 +54,7 @@ typing-extensions==4.16.0
     #   fastapi
     #   pydantic
     #   pydantic-core
+    #   pyee
     #   starlette
     #   typing-inspection
 typing-inspection==0.4.4

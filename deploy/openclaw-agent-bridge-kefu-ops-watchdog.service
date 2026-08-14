@@ -1,0 +1,11 @@
+[Unit]
+Description=DXL Commerce active decision watchdog
+After=network-online.target kefu-clawbot.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@PROJECT_DIR@
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-@PROJECT_DIR@/.env
+ExecStart=/usr/bin/env python3 "@PROJECT_DIR@/scripts/kefu_decision_watchdog.py"
+TimeoutStartSec=90

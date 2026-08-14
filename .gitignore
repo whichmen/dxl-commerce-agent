@@ -6,6 +6,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.test-venv/
 .conda/
 venv/
 dist/
@@ -32,3 +33,17 @@ eval-report.md
 *session_state*
 chrome_user_data/
 playwright/.auth/
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+taobao_accounts.conf
+workers/state/
+workers/chrome_user_data/
+.openclaw/
+openclaw.json
+auth-profiles.json
+sessions/
+*.bak
+*.bak.*

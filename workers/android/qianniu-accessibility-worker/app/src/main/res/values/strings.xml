@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">QianNiu Worker</string>
+    <string name="accessibility_desc">千牛客服消息自动接待服务（事件驱动）</string>
+</resources>

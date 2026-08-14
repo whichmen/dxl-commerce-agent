@@ -1,0 +1,16 @@
+[Unit]
+Description=DXL Commerce OpenClaw decision service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_DIR@
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-@PROJECT_DIR@/.env
+ExecStart=/usr/bin/env bash "@PROJECT_DIR@/scripts/run_dev.sh"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

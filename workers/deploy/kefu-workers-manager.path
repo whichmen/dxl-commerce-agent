@@ -1,0 +1,10 @@
+[Unit]
+Description=Reload DXL Commerce workers when their config changes
+
+[Path]
+PathModified=@WORKERS_DIR@/deploy/workers.watchdog.conf
+PathChanged=@WORKERS_DIR@/deploy/workers.watchdog.conf
+Unit=kefu-workers-manager-reload.service
+
+[Install]
+WantedBy=multi-user.target

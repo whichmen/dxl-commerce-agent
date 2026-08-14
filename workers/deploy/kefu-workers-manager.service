@@ -1,0 +1,19 @@
+[Unit]
+Description=DXL Commerce platform worker manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+WorkingDirectory=@WORKERS_DIR@
+Environment=HOME=@SERVICE_HOME@
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-@WORKERS_DIR@/.env.local
+ExecStart=/usr/bin/env python3 -u @WORKERS_DIR@/worker_watchdog.py --config @WORKERS_DIR@/deploy/workers.watchdog.conf
+Restart=always
+RestartSec=3
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

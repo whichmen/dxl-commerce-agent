@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "ops_example": {
+      "app_name": "示例运营助手",
+      "corp_id": "replace-with-your-corp-id",
+      "agent_id": "replace-with-your-agent-id",
+      "app_secret": "replace-with-your-app-secret",
+      "token": "replace-with-your-callback-token",
+      "aes_key": "replace-with-your-callback-aes-key",
+      "decision_url": "http://127.0.0.1:18080/v1/decide",
+      "api_key": "replace-with-the-decision-api-key",
+      "fallback_text": "稍等"
+    }
+  }
+}

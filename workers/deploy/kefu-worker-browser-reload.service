@@ -1,0 +1,11 @@
+[Unit]
+Description=Reload DXL Commerce worker browser pages
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@SERVICE_USER@
+WorkingDirectory=@WORKERS_DIR@
+Environment=HOME=@SERVICE_HOME@
+EnvironmentFile=-@WORKERS_DIR@/.env.local
+ExecStart=/usr/bin/env python3 @WORKERS_DIR@/scripts/reload_worker_browser_pages.py --config @WORKERS_DIR@/deploy/workers.watchdog.conf --stagger-sec 30

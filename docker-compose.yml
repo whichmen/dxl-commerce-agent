@@ -1,20 +1,39 @@
 services:
-  agent:
+  decision:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:18080:18080"
     environment:
-      DXL_DATABASE_PATH: /app/data/demo.db
-      DXL_FIXTURE_DIR: /app/demo/fixtures
-      DXL_POLICY_PATH: /app/policies/default.toml
-      DXL_DEMO_MODE: "true"
-      DXL_OPERATOR_KEY: ${DXL_OPERATOR_KEY:-local-synthetic-demo-key}
-      DXL_PLANNER_MODE: ${DXL_PLANNER_MODE:-rules}
-      DXL_LLM_BASE_URL: ${DXL_LLM_BASE_URL:-}
-      DXL_LLM_MODEL: ${DXL_LLM_MODEL:-}
-      DXL_LLM_API_KEY: ${DXL_LLM_API_KEY:-}
+      # The image does not bundle a model account or OpenClaw gateway. Host deployment
+      # uses agent mode; this isolated compose profile exercises the policy fallback.
+      CLAWBOT_DECISION_MODE: policy
+      CLAWBOT_API_KEY: ${CLAWBOT_API_KEY:-local-decision-example-key}
+      CLAWBOT_TOOL_API_KEY: ${CLAWBOT_TOOL_API_KEY:-local-tool-example-key}
+      CLAWBOT_IDENTITY_BASE_URL: http://identity:18082
+      CLAWBOT_IDENTITY_ORG_ID: org_example
+      CLAWBOT_IDENTITY_API_KEY: ${IDENTITY_API_KEY:-local-identity-example-key}
+      CLAWBOT_ADB_CAPTURE_ENABLED: "0"
+      CLAWBOT_WECOM_ENABLED: "0"
     volumes:
-      - dxl-demo-data:/app/data
+      - decision-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  identity:
+    build: .
+    command: ["dxl-identity-service"]
+    environment:
+      IDENTITY_HOST: 0.0.0.0
+      IDENTITY_PORT: "18082"
+      IDENTITY_DB_PATH: /app/data/identity.db
+      IDENTITY_API_KEY: ${IDENTITY_API_KEY:-local-identity-example-key}
+    volumes:
+      - identity-data:/app/data
     read_only: true
     tmpfs:
       - /tmp
@@ -24,4 +43,5 @@ services:
       - ALL
 
 volumes:
-  dxl-demo-data:
+  decision-data:
+  identity-data:

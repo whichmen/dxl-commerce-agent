@@ -5,6 +5,7 @@
 !.env.example
 .conda
 .venv
+.test-venv
 venv
 data
 dist
@@ -20,6 +21,17 @@ __pycache__
 *storage_state*
 *session_state*
 chrome_user_data
+workers/state
+workers/chrome_user_data
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+taobao_accounts.conf
+.openclaw
+openclaw.json
+auth-profiles.json
 playwright/.auth
 .pytest_cache
 .mypy_cache

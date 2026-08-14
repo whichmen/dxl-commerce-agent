@@ -1,373 +1,151 @@
-# Customer-Service Architecture
+# Customer-Service Flow
 
-## What this document covers
+This document follows one customer message from a commerce platform to the final delivery receipt. The default business path uses OpenClaw and an LLM; the fixed Policy mode is described separately at the end.
 
-This document explains the complete customer-service pipeline implemented in the repository and its production integration points. The default local configuration includes synthetic Browser/Mobile connectors, a durable SQLite inbox/cursor, workers, an outbox, receipt reconciliation, and human-handoff state, so the pipeline runs end to end without a real account. Authorized platform adapters can implement the same Connector contract; they are not bundled in this repository.
+## 1. Platform intake
 
-The sections below keep three boundaries explicit: code that runs now, controls required for a production deployment, and patterns I learned from private deployments without publishing their sensitive implementation details.
+All six platform adapters produce the same `IncomingMessage` fields: tenant, platform, store, platform nickname, message ID, message type, text/media, timestamp, role, and raw channel metadata.
 
-I did **not** copy my original browser/mobile adapters, private interfaces, selectors, account sessions, credentials, device details, customer records, or platform payloads into this repository. `BrowserConnector` and `MobileConnector` are new in-memory simulators with invented events and controlled failure cases.
+| Edge | Platforms | Implementation |
+|---|---|---|
+| Browser | Douyin, Pinduoduo, Kuaishou, WeChat Channels | Authenticated Chrome profile, CDP/Playwright, platform-specific intake and send logic |
+| Appium | Taobao Qianniu | Appium + UiAutomator2 page source and element actions |
+| Android service | Taobao Qianniu, Xiaohongshu Qianfan | Kotlin `AccessibilityService`, local configuration UI, Decision API client, delivery acknowledgement |
 
-## Scope
+Browser workers keep their own SQLite state for deduplication, turn ordering, send status, and recovery. The Android workers maintain their corresponding device-side state. The shared Python `DecisionClient` and both Android clients use the same `/v1/decide` and `/v1/worker/ack` protocol.
 
-The design covers one shared customer-service runtime for:
+## 2. Decision request
 
-- pre-sales product facts, availability, fit/compatibility questions, clarification, and recommendation;
-- order and logistics status;
-- post-sales policy inquiry, return/refund proposals, evidence collection, approval, and execution;
-- complaints, uncertain cases, and explicit human handoff;
-- reliable inbound consumption and outbound delivery across browser-like and mobile-like synthetic channels.
+The worker sends:
 
-I am not trying to automate everything at any cost. Transaction facts, permissions, refund rules, delivery state, and human ownership stay under normal program control.
+```json
+{
+  "event": {
+    "tenant_id": "tenant_example",
+    "platform": "douyin",
+    "store_id": "douyin_store_example",
+    "store_name": "Example store",
+    "platform_nickname": "customer_example",
+    "message_id": "platform-message-id",
+    "message_type": "text",
+    "text": "Where is my order?",
+    "media_url": "",
+    "raw": {}
+  }
+}
+```
 
-## System context
+If `CLAWBOT_API_KEY` is configured, the caller must send the same value in `X-Api-Key`. Platform code obtains that value from private worker configuration; it is not embedded in the worker source.
+
+## 3. Request preparation
+
+The Decision API performs these steps before invoking OpenClaw:
+
+1. Pydantic validates the event.
+2. Remote or device-captured image data is materialized under the configured media root when applicable.
+3. The service merges trusted channel capabilities, including whether the worker can send an image.
+4. It derives a session key from platform, store, and platform nickname.
+5. It takes an in-process session lock.
+6. It checks the stored decision for the same tenant/platform/store/message ID.
+7. It loads up to eight recent customer/agent pairs from SQLite.
+8. It records a coarse category for operational metadata.
+
+The classifier in step 8 does not answer the customer and does not replace the model.
+
+## 4. OpenClaw model/tool loop
+
+The Decision API calls the configured `kefu_ops` OpenClaw Agent with:
+
+- platform, store, nickname, message role and channel capabilities;
+- the current message;
+- bounded recent dialogue;
+- original image attachments when they can be loaded safely;
+- the rules and skills attached to the `kefu_ops` workspace.
+
+The model then decides whether it already has enough information or needs a tool. A typical logistics turn is:
 
 ```mermaid
-flowchart LR
-    subgraph Synthetic channel edge
-        B[Synthetic Browser Connector]
-        M[Synthetic Mobile Connector]
-        CB[Trusted connector binding]
-        B --> CB
-        M --> CB
-    end
+sequenceDiagram
+    participant C as Customer
+    participant W as Platform Worker
+    participant D as Decision API
+    participant O as OpenClaw + LLM
+    participant T as kefu-tools
+    participant E as ERP backend
 
-    CB --> IN[(Durable inbox + cursor)]
-    IN --> CW[ConversationWorker]
-    CW --> AR[Single Agent Runtime]
-    AR --> RT[Read tools]
-    AR --> KP[Optional knowledge retrieval]
-    AR --> PG[Policy + action gate]
-    PG --> AP[Human approval]
-    RT --> AR
-    KP --> AR
-    AP --> AR
-    AR --> DB[(Conversation / trace / action state)]
-    AR --> CW
-    CW --> OB[(Local SQLite outbox)]
-    OB --> DS[Delivery sender]
-    DS --> B
-    DS --> M
-    DS --> RC[(Delivery receipts)]
-    RC --> RE[Receipt reconciliation]
-    RE --> OB
-    RE --> HH[Human handoff]
-    HH --> CW
-    HS[ConnectorSupervisor health snapshot] -. checks .-> B
-    HS -. checks .-> M
-    WD[Production Watchdog - not implemented] -. would monitor .-> IN
-    WD -. would monitor .-> CW
-    WD -. would monitor .-> OB
-    WD -. would monitor .-> RC
+    C->>W: asks about shipment
+    W->>D: POST /v1/decide
+    D->>O: current turn + history + Skill
+    O->>T: order_lookup(...)
+    T->>D: POST /v1/tools/order_lookup
+    D->>E: scoped order query
+    E-->>D: order facts
+    D-->>T: normalized result
+    T-->>O: tool result
+    O->>T: logistics_lookup(...)
+    T->>D: POST /v1/tools/logistics_lookup
+    D->>E: shipment query
+    E-->>D: tracking facts
+    D-->>T: normalized result
+    T-->>O: tool result
+    O-->>D: final customer-facing reply
+    D-->>W: action=send, reply_text=...
+    W-->>C: sends reply
+    W->>D: POST /v1/worker/ack
 ```
 
-### What is actually in the public repo
+The model can make zero, one, or several tool calls inside one Agent invocation. The plugin's JSON schemas constrain arguments, while the backend remains responsible for authentication, authorization, business checks, and side-effect limits.
 
-| Capability | Is it here? |
-|---|---|
-| Strict normalized HTTP message envelope | **Yes** |
-| Single planner contract and deterministic runtime dispatch | **Yes** |
-| Scoped synthetic order/product/logistics/evidence tools | **Yes** |
-| Refund inquiry/action separation, policy, approval, and sandbox execution | **Yes** |
-| Local exact-message claim, response cache, trace, and action idempotency | **Yes** |
-| Synthetic Browser/Mobile Connectors | **Yes** — invented in-memory event and delivery behavior |
-| Connector-to-tenant/store binding | **Yes** — immutable constructor configuration; not real authentication |
-| Durable inbox/cursor and `ConversationWorker` | **Yes** — local SQLite with fenced item leases, not a distributed queue |
-| Outbound outbox and receipt checks | **Yes** — synthetic connectors only, no real provider receipt feed |
-| Human takeover workflow | **Yes** — session state, handoff event, acknowledgement, parking, and direct release; no operator console |
-| Connector health snapshot | **Yes** — through `ConnectorSupervisor` |
-| Watchdog, dashboards, alerts, and automated recovery | **Production integration point; not included** |
+## 5. Tools and business facts
 
-## 1. Built-in channel connectors
+The four default tools cover routine order and after-sales reasoning:
 
-### Synthetic Browser Connector
+- `order_lookup` resolves an explicit order or a trusted customer identity and returns current order facts;
+- `logistics_lookup` returns current shipment summary or trace;
+- `refund_history_lookup` returns prior refund/risk information;
+- `refund_case_lookup` builds a fact package from after-sales, order, logistics, identity, recent dialogue, and refund records.
 
-`BrowserConnector` replays invented events into a normalized contract. It advertises capabilities, binds trusted tenant/store/channel fields, enforces outbound length, deduplicates by business and idempotency keys, models timeout-after-commit, and supports in-memory receipt lookup. It contains no real platform URL, endpoint, selector, cookie, browser profile, wire format, or captured payload.
+The optional tools cover bulk after-sales review, small-refund approval, blacklist changes, offline classification/review, compatibility vision, bounded file reads, and bounded shell operations. Each optional group has a separate registration flag. The Python backend repeats the relevant gate, and file/shell access also requires an allowlist.
 
-Its inputs are invented `SyntheticInboundEvent` dataclasses constructed by tests and `dxl-agent-channel-demo`; there is no browser process or parser for captured platform traffic.
+Order and logistics data come from the configured ERP adapter. Identity mapping comes from `kefu_identity_service`; its SQLite data can be populated through the admin API or `scripts/import_identity_csv.py`. The special merchant product marker is injected through `CLAWBOT_TARGET_OUTER_ID`, not accepted from the model.
 
-### Synthetic Mobile Connector
+## 6. Image handling
 
-`MobileConnector` is an in-memory device-shaped simulator. It models offline and foreground-unavailable states before a remote attempt, confirmed delivery, and an unknown result after an attempt. Because it has neither native idempotency nor receipt lookup, an unknown business key is latched and any replay—including one with a new transport key—returns unknown without another remote attempt.
+For an image message, the service tries to pass the original local image to OpenClaw as an attachment. If the selected model path rejects attachments, the service can run an isolated image-summary retry and then process that summary in the normal conversation session.
 
-Both connectors normalize into the same envelope so the Agent Runtime does not contain channel-specific parsing logic. The mobile simulator contains no real account, package detail, device identifier, contact, screenshot, accessibility dump, or production message.
+The `kefu-core` skill tells the model not to guess unreadable order IDs or damage evidence. It should ask for a clearer image when it cannot verify the content. The legacy-compatible `image_inspect` tool is off by default because native model vision is the primary path.
 
-## 2. Trusted tenant and store binding
+Some mobile UI flows use the `/v1/worker/capture_ocr_batch` endpoint to crop screen regions and extract text. OCR can be provided by OpenClaw, Hermes, Qwen vision, or disabled through deployment configuration.
 
-Tenant, store, channel, and connector identity must come from trusted deployment context, not customer text, model output, or unverified event fields.
+## 7. Reply and delivery
 
-In the default local configuration, `ConnectorBinding` is immutable constructor configuration:
+The Agent returns plain text and may emit separate `[[IMAGE_URL:https://...]]` lines. The Decision API:
 
-```text
-connector_instance -> tenant_id + channel + store_id + permitted_capabilities
-```
+- rejects an empty result;
+- rejects a JSON-looking result so internal structures are not sent to a customer;
+- removes image markers from visible text;
+- deduplicates image URLs;
+- drops images when the current channel does not advertise image-send support;
+- stores the event and decision.
 
-Normalization copies connector, tenant, channel, and store identity from that binding, not from `SyntheticInboundEvent.untrusted_metadata`. `ConnectorIngestor` verifies the normalized event still matches its registered binding before persistence. The inbox/outbox retain a fingerprint of the binding and delivery capabilities plus the routed tenant/store/channel snapshot; `DeliveryWorker` rejects a connector that no longer matches that snapshot. This is a useful trust-boundary test, but it is not connector authentication.
+The worker validates the action. For `send`, it sends the supported text/images and calls `/v1/worker/ack` with the actual content and delivery status. For `manual`, workers that implement manual mode stop automatic handling for that conversation. `skip` sends nothing.
 
-For real use, each connector instance needs authentication, a server-side scope, and credentials/storage access limited to its tenant.
+The current OpenClaw single-reply path normally produces `send` or `skip`; explicit `manual` actions are part of the worker/API protocol and the policy fallback. A deployment that needs a central human queue should add an authenticated operator console and a durable handoff service rather than relying only on customer-facing escalation text.
 
-The current `/v1/messages` API accepts caller-supplied tenant/store/customer fields in local fixture mode. That is not production identity authentication.
+## 8. Watchdog and recovery
 
-## 3. Local durable inbox and connector cursor
+The worker watchdog reads `workers/deploy/workers.watchdog.conf`, starts configured workers, observes their health files, restarts crashed or stale processes, and holds workers that need a login or manual action. systemd units and a path-triggered reload service are included.
 
-### Inbox persistence and lease behavior
+The implementation separates three outcomes that should not be confused:
 
-`ConnectorIngestor` polls from the stored opaque cursor. `ChannelStore.record_poll` uses compare-and-swap on the expected cursor, then atomically inserts the sanitized normalized batch and advances that connector's cursor in local SQLite. A late poll cannot overwrite a newer cursor. A unique `(connector_id, external_event_id)` constraint makes replay idempotent; a normalized payload fingerprint turns “same ID, changed content” into a conflict instead of silently advancing the cursor.
+- the model produced a decision;
+- the worker attempted to send it;
+- the platform send was acknowledged and `/v1/worker/ack` was recorded.
 
-An implemented inbox record carries:
+This makes operational investigation much clearer than counting model completions alone.
 
-- immutable internal and external event IDs;
-- trusted tenant/channel/store binding;
-- conversation/customer/message routing fields and derived session key;
-- redacted text plus bounded synthetic attachment references;
-- capture timestamp, while the connector cursor is stored separately;
-- processing state, lease token, attempt count, and next-attempt time.
+## 9. Policy fallback
 
-Workers claim inbox records with 60-second fenced leases and renew them every 20 seconds while work is active. An expired item may be reclaimed, while a stale token cannot complete it. The claim query only exposes the oldest ready/processing row for each session, so connections sharing this SQLite database cannot claim a later message first. Retry exhaustion moves the item to `dead` and activates handoff. This remains a local database design, not a multi-host queue or a proof of ordering after migration to another backend.
+When `CLAWBOT_DECISION_MODE=policy` is explicitly selected, the Decision API bypasses OpenClaw and calls `PolicyEngine`. That path uses keyword/category rules and fixed replies. It is useful for service smoke checks and a controlled fallback, but it cannot replace the natural-language understanding, tool selection, and response writing of the configured LLM.
 
-## 4. ConversationWorker and ordering
-
-### Worker behavior
-
-`ConversationWorker.run_once` claims one inbox item, respects the session's bot/human state, recognizes an explicit synthetic handoff request, and otherwise invokes the existing single Agent Runtime. The item's session key is derived from trusted tenant/channel/store/customer fields.
-
-Its responsibilities are:
-
-1. claim and renew a fenced inbox lease;
-2. load bounded conversation/workflow state;
-3. stop automatic handling if a human owns the conversation;
-4. invoke the single Agent Runtime once;
-5. let `AgentRuntime` finalize its turn/trace/cache transaction;
-6. atomically mark the inbox complete and insert one stable outbox item in a second SQLite transaction;
-7. classify failures as retryable, terminal, or human-review-required.
-
-The two transactions are bridged by the runtime's message cache: a simulated crash before outbox commit replays the cached decision without duplicating conversation turns, then creates the same deterministic outbox key. The worker is orchestration code, not a second reasoning agent.
-
-The built-in channel runner normally calls workers one after another, while tests cover SQLite head-of-line claims and lease renewal. It does not promise ordering across machines; a real deployment still needs that.
-
-## 5. Single Agent Runtime
-
-### What the runtime does
-
-One Agent Runtime receives normalized context and returns a typed result. This code uses structured intent plus fixed dispatch; it does not use native model Function Calling or a group of agents debating each reply.
-
-The runtime returns its existing structured response with intent, status, reply, tool calls, policy result, pending action, grounding fields, and trace ID. `ConversationWorker` persists that reply into the outbox. Explicit customer handoff is recognized by the worker before runtime invocation; delivery ambiguity can activate handoff later in `DeliveryWorker`.
-
-The model may help classify intent or draft wording. It cannot establish identity, select an arbitrary capability, approve its own action, or decide that a message was delivered.
-
-## 6. Tools, knowledge, policy, and approval
-
-### Where business facts come from
-
-In the public implementation, mutable facts—orders, logistics, inventory, price, and refund state—come from tenant/store/customer-scoped synthetic tools. The runtime supplies trusted scope outside model-controlled arguments. Read and write capabilities remain separate. Real production tools would additionally require authenticated, least-privilege service access.
-
-### Optional knowledge retrieval
-
-RAG is appropriate for unstructured manuals or policy explanations, not live transaction state. Retrieved passages require tenant, source, version, and effective-date metadata and remain untrusted evidence.
-
-RAG is not implemented in the current repository.
-
-### Policy and approval
-
-Sensitive actions pass normal code checks for ownership, state, amount, evidence, risk limit, and required approval. The public sandbox shows this with refunds.
-
-A production approval record should contain authenticated operator identity, role, tenant, policy version, proposal hash, decision, timestamp, and reason. The current shared local operator key is not production identity or authorization.
-
-## 7. Local outbox and outbound idempotency
-
-### Outbox persistence and lease behavior
-
-The customer reply is not sent inside `ConversationWorker`. After the runtime has finalized its cached decision, `ChannelStore.complete_with_reply` atomically completes the inbox lease and inserts one outbox row with deterministic outbox and delivery keys. A separate `DeliveryWorker` claims and sends it.
-
-Each outbox item has:
-
-- a stable business delivery key;
-- connector, tenant, channel, store, session, conversation, and customer routing snapshots;
-- response payload or protected reference;
-- local state: `ready`, `delivering`, `succeeded`, `dead`, or `unknown`;
-- lease/attempt timing;
-- platform message reference when available;
-- one stored synthetic remote receipt and the latest safe error code.
-
-Reclaiming a worker lease must not create a second logical reply. Repeated attempts reuse the same delivery key, and a channel idempotency primitive is used when one exists. The outbox claim exposes only the oldest `ready` or `delivering` row for a session, so a later reply cannot overtake an earlier delayed retry in the shared SQLite database. An expired `delivering` lease is reclaimable only when its snapshotted connector capability declares native idempotency and its session fence is still current; otherwise it becomes `unknown` and activates handoff.
-
-Inbox completion and outbox insertion are one local SQLite transaction. Agent decision finalization is a separate transaction, with cache replay tested as the recovery bridge. This is not a distributed transactional outbox.
-
-## 8. Delivery receipts and reconciliation
-
-### Delivery and receipt behavior
-
-Send-call success and confirmed delivery are modeled as different facts. `DeliveryWorker` interprets the connector's typed delivery disposition. For a Browser unknown result, it immediately calls the synthetic receipt lookup before deciding whether to mark success, retry, or hand off.
-
-Before any send, `DeliveryWorker` recomputes the stored outbox payload hash, verifies the connector binding snapshot and session generation, and checks that returned attempt/receipt idempotency keys match the current lease. The synthetic Browser connector additionally compares:
-
-- the stable idempotency key and connector-computed payload hash;
-- its in-memory synthetic attempt record;
-- returned platform reference, if any;
-- the synthetic connector's in-memory receipt result;
-
-Only a confirmed result moves an outbox row to `succeeded`. `NOT_FOUND_SAFE_TO_RETRY` may requeue only when the connector advertises native idempotency. A generic `RETRYABLE` result may requeue only before a remote attempt or with native idempotency; a post-attempt result without that protection becomes `unknown`. The deterministic `DeliveryWorker`, not the language model, changes delivery state.
-
-There is no asynchronous provider receipt consumer, durable receipt history, or real authoritative message lookup.
-
-## 9. Ambiguous mobile delivery: never retry blindly
-
-### How uncertain delivery is handled
-
-A mobile automation call may time out after the application accepted the message. Treating every timeout as failure can send the same reply twice.
-
-The synthetic Mobile connector and `DeliveryWorker` take the cautious path:
-
-```text
-delivering -> succeeded   (confirmed synthetic send)
-delivering -> ready       (failure before any remote attempt; bounded retry)
-delivering -> unknown     (result ambiguous after an attempt)
-unknown -> human_active   (no safe receipt capability; do not resend)
-```
-
-An unknown Mobile result is not automatically resent. The connector latches the semantic business key, and the worker marks the outbox `unknown` and activates human handoff because the synthetic Mobile connector advertises no safe receipt lookup. The same rule applies when a non-idempotent `delivering` lease expires after a process crash: it becomes `unknown`, never `ready`. A direct manual-resolution method can record `confirmed`, `not_sent`, or `cancelled`; automation cannot resume while an unknown item remains. The repository does not implement a real device sender, platform history query, or authenticated operator workflow.
-
-## 10. Human handoff
-
-### Local handoff state; no operator console
-
-The implemented local state is intentionally small:
-
-```text
-bot -> human_active -> bot
-```
-
-An explicit “transfer to a person” message atomically activates `human_active`, increments a persistent session generation, records a handoff event, completes the inbox item, freezes queued automatic replies, and enqueues one deterministic acknowledgement. Ambiguous Mobile delivery, missing connector, or retry exhaustion also activates handoff. Later inbound items for the session are parked while human state is active.
-
-`ConversationWorker` and `DeliveryWorker` share a per-session asynchronous lock on one `ChannelStore`; `DeliveryWorker` rechecks the persisted generation immediately before the synthetic send. This forms a tested local send barrier. It is not a cross-process/distributed lock, so production still requires a durable ownership protocol around real remote calls.
-
-`release_handoff` performs only a `human_active` to `bot` transition. A repeated release is idempotent, while any `delivering` or `unknown` outbox item blocks the transition; after explicit resolution or confirmed completion it advances the generation and requeues parked inbound messages. It is a direct store method used by tests and local integration code, not an authenticated operator endpoint. The repository has no human-review console, operator identity, SLA workflow, rich handoff bundle, or production notification integration.
-
-## 11. What I used in the private system
-
-In my private customer-service system, I used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. I deployed after-sales action executors separately from message workers, so a delivery worker did not automatically get permission to change business data.
-
-That is a description of my experience, not a claim that the private adapters are published here. I left out private selectors, endpoints, device/account details, deployment topology, and original adapter source. The repository's Browser/Mobile connectors implement the same architectural boundary with synthetic events; authorized platform adapters plug in behind that interface.
-
-## 12. Watchdog and observability
-
-### Production monitoring contract
-
-A Watchdog should observe and alert; it must not silently invent business outcomes. Useful checks include:
-
-- connector heartbeat and cursor age;
-- inbox lag, expired leases, attempts, and dead-letter growth;
-- per-conversation processing latency at p50/p95/p99 and throughput;
-- planner/tool/policy latency and error class;
-- outbox age and items stuck in `delivering` or `unknown`;
-- receipt reconciliation lag;
-- approval and human-handoff age;
-- verified resolution, handoff, delivery-confirmation, retry, and unresolved-unknown rates;
-- duplicate suppression and idempotency conflicts;
-- redaction failures and audit-sink health.
-
-Every rate needs an explicit denominator, workflow scope, and time window.
-
-Automated recovery should be limited to safe operations such as renewing/reassigning expired work or restarting a stateless synthetic connector. It must not approve a refund, mark a delivery successful without evidence, or blindly repeat a write.
-
-The current repository has a health endpoint, structured local traces, selected SQLite audit events, and `ConnectorSupervisor` safe health snapshots. The supervisor is not a polling Watchdog and does not alert or restart anything. There is no production metrics backend, alert manager, or recovery controller.
-
-## 13. End-to-end flows
-
-### Pre-sales read flow
-
-```text
-synthetic connector event
--> trusted binding
--> durable inbox
--> ConversationWorker
--> intent + scoped product/inventory tools
--> optional policy/manual retrieval
--> grounded response
--> transactional outbox
--> sender + receipt
-```
-
-If the product identity or required preference is missing, ask one clarification question. Do not guess a SKU, price, stock value, or policy.
-
-### Post-sales action flow
-
-```text
-customer inquiry
--> explain policy without action
--> explicit customer action request
--> scoped order/evidence lookup
--> deterministic policy
--> deny | auto-approved proposal | human approval
--> idempotent backend execution
--> verified result
--> transactional customer reply
--> delivery receipt / reconciliation
-```
-
-An approved business action and a delivered customer notification are separate state machines and must be audited separately.
-
-## 14. Failure matrix
-
-| Failure | Safe behavior | Current implementation |
-|---|---|---|
-| Duplicate inbound event | One inbox record/decision; replay completed result | Implemented in local SQLite plus Agent Runtime cache |
-| Inbox worker loses/overruns lease | Active workers renew; an expired lease can be reclaimed; stale token is fenced | Implemented for SQLite; no distributed coordinator |
-| Worker fails before runtime decision completes | Requeue with bounded attempts; handoff after exhaustion | Implemented |
-| Worker fails after decision commit but before outbox commit | Cached decision is replayed without duplicate turns; deterministic outbox is then inserted | Implemented and tested with a synthetic crash |
-| Model unavailable | Deterministic fallback or handoff | Rule fallback implemented for the optional provider |
-| Read tool unavailable | State that the fact is unverified; retry within a bound or hand off | Still missing |
-| Business write timeout | Reconcile authoritative operation before retry | Not implemented; current executor is synthetic |
-| Browser timeout after synthetic commit | Look up receipt and mark one outbox success without another remote attempt | Implemented |
-| Mobile result unknown or non-idempotent send lease expires | Latch/mark unknown, activate handoff, and never automatically retry | Implemented with explicit manual resolution |
-| Earlier reply enters delayed retry | Keep later same-session outbox rows behind it | Implemented head-of-line in shared SQLite |
-| Human takes ownership | Freeze queued replies, recheck generation before send, and park later inbound messages | Implemented local barrier; no cross-process production lock or console/authentication |
-| Watchdog unavailable | Core local state still exists; production alert/recovery is absent | Only a one-shot health snapshot is implemented |
-
-## 15. Security and privacy requirements
-
-- authenticate connectors and bind their tenant/store scope server-side;
-- keep model-controlled text outside identity and authorization fields;
-- minimize and redact content before model calls and telemetry;
-- encrypt durable inbox, conversation, outbox, receipt, and approval data;
-- use per-tenant least-privilege connector/tool credentials;
-- define retention, deletion, legal hold, and operator access controls;
-- never publish production conversations as fixtures, even after superficial name replacement;
-- use only platform-approved integrations and complete legal/platform review.
-
-## 16. Verification evidence
-
-The 53-test suite covers the synthetic connectors, store, and workers without calling real services. It checks:
-
-- Browser and Mobile events receive binding-derived scope and normalize to the same contract;
-- connector cursor and inbox insertion commit idempotently in one SQLite transaction;
-- stale concurrent polls fail cursor compare-and-swap, and changed duplicate payloads fail closed;
-- expired inbox leases are reclaimed while stale workers are fenced;
-- active inbox/outbox leases expose renewal, and later same-session rows cannot overtake an earlier ready/delivering row;
-- outbox delivery is leased and one receipt is recorded;
-- connector rebinding, payload-hash mismatch, and returned delivery-key mismatch cannot confirm an outbox;
-- Browser timeout-after-commit is reconciled without a duplicate remote attempt;
-- Mobile offline/foreground failures retry only before a remote attempt;
-- a retryable result after a non-idempotent remote attempt is handed off rather than requeued;
-- local human ownership cancels a queued automatic reply and permits only the handoff acknowledgement;
-- mobile `unknown` never triggers an automatic duplicate;
-- an expired non-idempotent delivery remains unknown until explicit resolution, which gates handoff release;
-- an explicit handoff parks later messages; release is idempotent and blocked while a reply is delivering or unknown;
-- a simulated crash between runtime completion and outbox commit reuses the cached decision without duplicate turns;
-- policy denial cannot be bypassed by planner output;
-- built-in phone/email markers are redacted.
-
-The separate 50-case offline Eval still exercises the deterministic core Agent Runtime rather than the connector pipeline. Neither test suite uses a real account or validates production scalability.
-
-## 17. Production integration checklist
-
-1. Replace constructor trust with authenticated connector identity and server-side tenant/store authorization.
-2. Move local inbox/outbox state to managed storage with partitioned per-session ordering and renewable distributed leases.
-3. Implement only platform-approved real connectors behind the tested protocol.
-4. Add durable asynchronous receipt ingestion and authoritative reconciliation.
-5. Build an authenticated human-review console, approval workflow, SLA, and audited resume controls.
-6. Keep after-sales action executors separately authorized and deployed from message delivery workers.
-7. Add metrics, dashboards, production Watchdog checks, alerting, and failure drills.
-8. Complete privacy, security, compliance, platform, capacity, and rollback reviews before real traffic.
-
-This repository runs the full local workflow and keeps the Connector, Tool, policy, delivery, and human-handoff boundaries explicit, making it practical to extend for an authorized deployment without exposing private operating details.
+The default Docker Compose profile selects this mode on purpose. The full flow described above requires a separately configured OpenClaw Gateway, provider, plugin environment, and business-system credentials.

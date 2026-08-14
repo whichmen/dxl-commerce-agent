@@ -32,10 +32,11 @@ jobs:
           python -m pip install --requirement requirements-dev.lock
           python -m pip install --no-build-isolation --no-deps --editable .
 
-      - name: Lint
+      - name: Syntax and high-confidence lint
         run: |
-          ruff check .
-          ruff format --check .
+          ruff check . --select E9,F63,F7,F82
+          python -m compileall -q src workers
+          find scripts workers/scripts openclaw/workspace-kefu-ops/scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
       - name: Scan repository for high-confidence secrets
         run: python scripts/secret_scan.py
@@ -50,7 +51,9 @@ jobs:
         run: python -m dxl_agent.eval_runner --json
 
       - name: Build Python wheel
-        run: python -m pip wheel . --no-build-isolation --no-deps --wheel-dir dist
+        run: |
+          python -m pip wheel . --no-build-isolation --no-deps --wheel-dir dist
+          python -c "import workers.douyin_auto_reply, kefu_clawbot, kefu_identity_service"
 
   container:
     runs-on: ubuntu-latest

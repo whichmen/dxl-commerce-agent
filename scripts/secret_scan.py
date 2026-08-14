@@ -19,6 +19,29 @@ PATTERNS = {
     "slack-token": re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
     "google-api-key": re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
     "credential-url": re.compile(r"https?://[^\s/:]+:[^\s/@]+@[^\s/]+"),
+    "openai-style-token": re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    "bearer-token": re.compile(r"\bBearer\s+[A-Za-z0-9._~-]{20,}\b", re.IGNORECASE),
+    "jwt": re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+    "absolute-user-home": re.compile(r"/(?:home|Users)/[A-Za-z0-9._-]+/"),
+    "private-ipv4": re.compile(
+        r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
+        r"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|"
+        r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2})\b"
+    ),
+}
+
+DENIED_FILENAMES = {
+    "auth-profiles.json",
+    "openclaw.json",
+    "local.properties",
+    "taobao_accounts.conf",
+}
+
+DENIED_PARTS = {
+    "chrome_user_data",
+    "playwright/.auth",
+    "session_state",
+    "storage_state",
 }
 
 
@@ -37,6 +60,11 @@ def main() -> int:
     for path in candidate_files():
         if not path.is_file():
             continue
+        relative = path.relative_to(ROOT)
+        relative_text = relative.as_posix()
+        if path.name in DENIED_FILENAMES or any(part in relative_text for part in DENIED_PARTS):
+            findings.append((relative_text, 0, "sensitive-file"))
+            continue
         try:
             content = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -44,7 +72,7 @@ def main() -> int:
         for line_number, line in enumerate(content.splitlines(), start=1):
             for name, pattern in PATTERNS.items():
                 if pattern.search(line):
-                    findings.append((str(path.relative_to(ROOT)), line_number, name))
+                    findings.append((relative_text, line_number, name))
 
     for path, line_number, name in findings:
         print(f"{path}:{line_number}: possible {name}")

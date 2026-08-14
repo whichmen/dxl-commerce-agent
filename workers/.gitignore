@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.runtime/
+chrome_user_data/
+state/
+*.db
+*.sqlite
+*.sqlite3
+taobao_accounts.conf
+*.jks
+*.keystore
+keystore.properties
