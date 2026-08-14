@@ -250,15 +250,7 @@ Those are rough figures from my own operation, not independently audited numbers
 - add a catalog/policy RAG layer, operator console, monitoring, or multi-machine infrastructure;
 - continuously check responses, tool paths, and safety rules through tests and Eval.
 
-## Custom development and integration
-
-I can adapt this system to a merchant's actual workflow, including:
-
-- Taobao, Pinduoduo, Douyin Ecommerce, Kuaishou Ecommerce, Xiaohongshu, and WeChat Channels;
-- ERP, OMS, order, logistics, catalog, inventory, and after-sales systems;
-- product documents, support scripts, platform policies, and after-sales knowledge bases;
-- automatic replies, refund controls, human approval, exception handoff, and operator consoles;
-- private deployment, monitoring, recovery, Eval, and continuous improvement.
+## Contact
 
 For technical discussion or project work, contact me on WeChat: `whichmen`.
 
