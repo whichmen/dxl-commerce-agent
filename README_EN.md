@@ -19,6 +19,29 @@ The repository brings platform intake, browser and Android automation, the Agent
 - persists conversations, decisions, related state, and delivery results in SQLite, with operational query endpoints;
 - continuously checks the code with automated tests, offline Eval, secret scanning, and CI.
 
+## Technology stack
+
+The items below are backed by code and executable paths in this repository rather than planned keywords. Capabilities that require an additional service or permission are marked optional.
+
+| Area | Technologies and engineering capabilities used |
+|---|---|
+| LLM and Agent | OpenClaw, LLM, Agent loop, native function/tool calling, Skills, prompts, and business rules |
+| Agent memory | Recent dialogue in SQLite, OpenClaw sessions, and conversation context scoped by platform/store/customer |
+| Agent tool system | TypeScript OpenClaw plugin, JSON Schema, 13 business tools, and an authenticated HTTP Tool Gateway |
+| Backend services | Python 3.11/3.12, FastAPI, Uvicorn, Pydantic v2, and HTTP APIs |
+| Concurrency and state | asyncio, per-conversation serialization, message deduplication, decision caching, idempotency keys, and delivery acknowledgements |
+| Data storage | SQLite for dialogue, decisions, identity mappings, worker state, and delivery results |
+| Browser automation | Chrome CDP, Playwright Async API, isolated browser profiles, and platform-page message intake/delivery |
+| Mobile automation | Appium, UiAutomator2, ADB, and Android reverse-port forwarding |
+| Native Android | Kotlin, AccessibilityService, OkHttp, Kotlin Coroutines, and local configuration UI |
+| Multimodal | Native OpenClaw image input; optional Qwen-VL, Hermes OCR, screenshot cropping, and OCR |
+| Commerce systems | ERP integration, orders, logistics, after-sales, refunds, and customer-identity mapping |
+| Enterprise WeChat (optional) | Callback signature verification, AES encryption/decryption, multi-application Hub, and text/image delivery |
+| Reliability | Worker watchdog, timeout/failure recovery, health checks, the `manual` handoff protocol, and systemd |
+| Testing and Eval | pytest, pytest-asyncio, HTTPX/ASGI integration tests, 72 automated tests, and 50 deterministic offline Eval cases |
+| Engineering | Ruff, Mypy, secret scanning, Python wheels, Docker Compose, and GitHub Actions |
+| Security controls | Separate API keys, tool-registration gates, model-argument filtering, file/command allowlists, and backend refund validation |
+
 ## Supported platforms
 
 The repository includes the platform worker source, not only connector interfaces.

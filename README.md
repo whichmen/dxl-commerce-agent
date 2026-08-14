@@ -19,6 +19,29 @@
 - 用 SQLite 保存会话、决策、工具相关状态和发送结果，并提供运维查询接口；
 - 用自动化测试、离线 Eval、密钥扫描和 CI 持续检查代码。
 
+## 技术栈
+
+下表列的是仓库中已经有实际代码和运行链路的技术，不是为了堆关键词列出的预计方案。需要额外服务或权限的能力已标为“可选”。
+
+| 方向 | 实际使用的技术与工程能力 |
+|---|---|
+| 大模型与 Agent | OpenClaw、LLM、Agent Loop、原生 Function Calling / Tool Calling、Skill、Prompt 与业务规则 |
+| Agent Memory | SQLite 最近对话、OpenClaw Session、按平台/店铺/用户维持会话上下文 |
+| Agent 工具系统 | TypeScript OpenClaw 插件、JSON Schema、13 个业务工具、带鉴权的 HTTP Tool Gateway |
+| 后端服务 | Python 3.11/3.12、FastAPI、Uvicorn、Pydantic v2、HTTP API |
+| 并发与状态 | asyncio、按会话串行、消息去重、决策缓存、幂等键、发送回执 |
+| 数据存储 | SQLite 客服对话、决策、身份映射、Worker 状态和发送结果 |
+| 浏览器自动化 | Chrome CDP、Playwright Async API、独立浏览器 Profile、平台页面消息收发 |
+| 手机自动化 | Appium、UiAutomator2、ADB、Android 端口反向代理 |
+| Android 原生 | Kotlin、AccessibilityService、OkHttp、Kotlin Coroutines、本地配置界面 |
+| 多模态 | OpenClaw 原生图片输入；可选 Qwen-VL、Hermes OCR、截图裁剪与 OCR |
+| 电商业务系统 | ERP 接入、订单、物流、售后、退款、顾客身份映射 |
+| 企业微信（可选） | 回调验签、AES 加解密、多应用 Hub、文字/图片消息推送 |
+| 可靠性工程 | Worker watchdog、超时与失败恢复、健康检查、`manual` 人工接管协议、systemd |
+| 测试与 Eval | pytest、pytest-asyncio、HTTPX/ASGI 集成测试、72 项自动化测试、50 条确定性离线 Eval |
+| 工程化 | Ruff、Mypy、Secret Scan、Python wheel、Docker Compose、GitHub Actions |
+| 安全控制 | 分离 API Key、工具权限开关、模型参数过滤、文件/命令白名单、退款后端校验 |
+
 ## 支持的平台
 
 仓库里包含六个平台的接入代码，不只是接口定义。
