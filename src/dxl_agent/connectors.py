@@ -1,4 +1,4 @@
-"""Clean-room synthetic channel connectors used by the public demo.
+"""Built-in synthetic channel connectors for the runnable local path.
 
 The classes in this module do not contain real platform URLs, selectors, wire
 formats, credentials, or automation code.  They model the reliability contract

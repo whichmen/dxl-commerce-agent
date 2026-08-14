@@ -2,7 +2,7 @@
 
 ## Where these lessons came from
 
-I wrote this public project from scratch with synthetic data. It lets me show the engineering ideas without publishing private production code, platform automation, credentials, prompts, customer records, or operating data.
+This repository implements the reusable customer-service runtime, safety boundaries, workers, connectors, tests, and Eval with synthetic data in its default local configuration. Private production code, platform automation details, credentials, prompts, customer records, and operating data are deliberately excluded.
 
 The private system I ran supported more than ten stores. From my own operating records, customer response time was usually around 0.5–2.5 minutes and the overall labor cost fell by about half. These are rough numbers from my own operation, not independently audited figures or performance claims for this public project.
 
@@ -30,17 +30,17 @@ RAG can help with large unstructured corpora such as manuals, policy explanation
 
 Prompts influence behavior but do not enforce authorization. Refund limits, allowed state, paid amount, evidence requirements, and approval thresholds belong in deterministic code or versioned configuration.
 
-The runtime goes one step further for the demonstrated refund flow: it separates `refund_inquiry` from `refund_request`, requires one order ID and a closed, anchored action command explicitly present in the customer message, and re-derives the amount and policy-relevant reason rather than trusting planner fields. Amount parsing uses `Decimal`, not binary floating point. Questions, quoted examples, negations, bare amount mentions, multiple amounts, suspicious signs, and over-precise values fail closed. Tests inject unsafe planners that attempt to change the order or downgrade the reason and confirm that the runtime preserves the customer-selected order and required evidence.
+The runtime goes one step further for the implemented sandbox refund flow: it separates `refund_inquiry` from `refund_request`, requires one order ID and a closed, anchored action command explicitly present in the customer message, and re-derives the amount and policy-relevant reason rather than trusting planner fields. Amount parsing uses `Decimal`, not binary floating point. Questions, quoted examples, negations, bare amount mentions, multiple amounts, suspicious signs, and over-precise values fail closed. Tests inject unsafe planners that attempt to change the order or downgrade the reason and confirm that the runtime preserves the customer-selected order and required evidence.
 
 ## 5. Serialize by conversation, not globally
 
-Messages in one conversation may depend on order, while unrelated conversations should not block each other. The current code uses one in-process `asyncio.Lock` for each canonical session key. It also uses an expiring SQLite claim to ensure that two processes sharing the demo database do not both handle the exact same message ID; an active duplicate fails fast, and an abandoned claim can be reclaimed after 60 seconds.
+Messages in one conversation may depend on order, while unrelated conversations should not block each other. The current code uses one in-process `asyncio.Lock` for each canonical session key. It also uses an expiring SQLite claim to ensure that two processes sharing the local database do not both handle the exact same message ID; an active duplicate fails fast, and an abandoned claim can be reclaimed after 60 seconds.
 
 That base-runtime claim can deduplicate one exact message, but it does not order different messages or renew a long job. The synthetic channel path adds renewable fenced leases and head-of-line inbox/outbox claims for processes sharing one SQLite database. It still cannot guarantee order across machines; a real deployment needs a partitioned queue, distributed lease, or similar ownership mechanism.
 
 ## 6. At-least-once delivery demands several kinds of deduplication
 
-The demo uses three different mechanisms:
+The implementation uses three different mechanisms:
 
 - a canonical message key plus expiring SQLite claim prevents concurrent handling of an exact redelivery and returns the cached decision after completion;
 - a canonical refund business key retains one action per scoped order;
@@ -48,13 +48,13 @@ The demo uses three different mechanisms:
 
 The synthetic channel path adds cursor compare-and-swap, changed-payload conflict detection, renewable fenced inbox/outbox leases, a stable delivery key, connector-binding snapshots, Browser receipt checks, and `unknown` instead of automatic replay for an expired non-idempotent send.
 
-SQLite transaction locking and a unique index also prevent two included demo connections from completing one action twice.
+SQLite transaction locking and a unique index also prevent two concurrent connections from completing one action twice.
 
 The harder case is a real write that times out after the remote side may have accepted it. Before retrying, a live service has to check the backend's own operation record. This synthetic executor has no real backend, so it does not implement that step.
 
 ## 7. Redact before the model, not only before logs
 
-The current message is redacted before either planner sees it, including in OpenAI-compatible mode. Persisted recent history is redacted too. This reduces accidental propagation of the phone, email, and token-like patterns covered by the small demo redactor.
+The current message is redacted before either planner sees it, including in OpenAI-compatible mode. Persisted recent history is redacted too. This reduces accidental propagation of the phone, email, and token-like patterns covered by the built-in redactor.
 
 Production privacy needs much more: identity-aware data minimization, broad DLP, attachment handling, provider review, encryption, retention, deletion, and audit access controls. A few regular expressions are evidence of the boundary, not a privacy guarantee.
 
@@ -67,7 +67,7 @@ Recent conversation turns, transaction state, workflow state, and semantic memor
 - action state supports approval and idempotent execution;
 - semantic retrieval memory is optional and must not become transaction truth.
 
-The repository implements the first three in a small SQLite-backed demo. It does not implement vector memory or RAG.
+The repository implements the first three in a local SQLite-backed runtime. It does not implement vector memory or RAG.
 
 ## 9. Evaluate the trajectory, not only the final sentence
 
@@ -97,15 +97,15 @@ I do not present my rough private-system figures as a benchmark. The only number
 
 ## 11. Shared secrets are not operator identity
 
-The demo protects trace, approval, and execution routes with `X-DXL-Operator-Key`. This is useful for preventing accidental open access during a localhost demonstration, but every holder has the same authority and the supplied approver is only an audit label.
+The default local configuration protects trace, approval, and execution routes with `X-DXL-Operator-Key`. This prevents accidental open access during local operation, but every holder has the same authority and the supplied approver is only an audit label.
 
-Production human approval needs authenticated operator identity, role-based authorization, tenant scope, separation of duties where required, session controls, and durable accountability. The Compose service binds to localhost to keep the demo exposure narrow; localhost binding is not itself authentication.
+Production human approval needs authenticated operator identity, role-based authorization, tenant scope, separation of duties where required, session controls, and durable accountability. The Compose service binds to localhost to keep the default exposure narrow; localhost binding is not itself authentication.
 
 ## 12. What came from my private system
 
 In my private customer-service system, I used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. I deployed after-sales action executors separately from message workers, so a worker that sent messages did not automatically get permission to change orders or refunds.
 
-That paragraph describes my experience; it does not mean the private adapters are in this repository. I did not publish platform names, selectors, private addresses, device/account details, my deployment layout, or the original adapter code. The public `BrowserConnector`, `MobileConnector`, inbox/outbox, receipt, and worker code is new synthetic code written for this demo.
+That paragraph describes my experience; it does not mean the private adapters are in this repository. I did not publish private selectors, addresses, device/account details, deployment topology, or original adapter code. The repository's `BrowserConnector`, `MobileConnector`, inbox/outbox, receipt, and worker modules are clean implementations built around synthetic events and documented integration contracts.
 
 ## 13. Frameworks are replaceable; invariants are not
 
@@ -125,7 +125,7 @@ I used plain Python, FastAPI, Pydantic, and SQLite so the control flow stays eas
 | Synthetic Browser/Mobile connectors and cautious ambiguous-delivery handoff | Platform-approved authenticated connectors and durable receipts |
 | Local human generation/send fence, acknowledgement, parking, explicit unknown resolution, and guarded release | Cross-process barrier, authenticated human console, roles, SLA, and audited resume |
 | Basic pre-planner and persistence redaction | Comprehensive DLP and lifecycle governance |
-| Shared demo operator key | Individual identity, roles, tenant authorization, approval accountability |
+| Shared local operator key | Individual identity, roles, tenant authorization, approval accountability |
 | Deterministic templates and API shape validation | Semantic grounding validation if model-written responses are introduced |
 | 53 tests and 50-case offline synthetic Eval | Real production metrics, adversarial sets, human review, and incident feedback |
 

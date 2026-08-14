@@ -2,11 +2,11 @@
 
 ## Supported versions
 
-This is a portfolio project, not a released product. I only maintain the latest version on the default branch.
+I maintain the latest version on the default branch.
 
 ## Repository boundary
 
-I rewrote this public version from scratch and filled it with synthetic data. I do not put private production code, real conversations, logs, databases, screenshots, prompts, cookies, browser profiles, platform identifiers, credentials, private endpoints, or old Git history from the live system in this repository.
+This repository is a clean implementation with synthetic data in its default local configuration. Private production code, real conversations, logs, databases, screenshots, prompts, cookies, browser profiles, account identifiers, credentials, private endpoints, and deployment history are deliberately excluded.
 
 The secret scanner catches several common credential patterns, but it cannot prove that every file is safe. I still review staged files and Git history before pushing.
 
@@ -23,13 +23,13 @@ Do not open a public issue containing:
 - real customer, merchant, order, or payment information;
 - a private service address or production topology.
 
-Include the affected revision, impact, and a small reproduction using synthetic data. A suggested fix is welcome. I do not promise a response time or run a bounty program for this demo.
+Include the affected revision, impact, and a small reproduction using synthetic data. A suggested fix is welcome. Reports are handled on a best-effort basis; this project does not currently run a bug-bounty program.
 
-## Security properties implemented in the demo
+## Implemented security properties
 
 - strict Pydantic HTTP request and response shapes;
 - structured intent plus deterministic runtime dispatch, not native Function Calling;
-- current-message and stored-history redaction for demonstrated phone/email/token patterns;
+- current-message and stored-history redaction for the built-in phone/email/token patterns;
 - tenant/store/customer filtering in synthetic order and evidence tools;
 - deterministic refund policy and explicit approval state;
 - expiring exact-message claims, action deduplication, and SQLite execution idempotency;
@@ -41,11 +41,11 @@ Include the affected revision, impact, and a small reproduction using synthetic 
 
 The optional OpenAI-compatible mode receives the redacted current message, not the original text. Recent history sent to it is also sourced from redacted stored turns.
 
-## What this demo does not cover
+## Production security integration points
 
-`X-DXL-Operator-Key` is one shared demo key. It does not establish a person's identity, role, authorization, tenant membership, or approval authority. The public message endpoint also does not authenticate its claimed tenant/customer context. Localhost-only Compose binding narrows network exposure but does not make the service production-safe.
+`X-DXL-Operator-Key` is one shared key for the default local configuration. It does not establish a person's identity, role, authorization, tenant membership, or approval authority. The message endpoint also does not authenticate its claimed tenant/customer context. Localhost-only Compose binding narrows network exposure but is not a substitute for production authentication and authorization.
 
-This public demo does not include:
+The following controls are deployment integration points and are not included in the repository:
 
 - signed webhooks, user authentication, operator identity, or authorization;
 - distributed locks, durable queues, or multi-region ordering;
@@ -57,8 +57,8 @@ This public demo does not include:
 - immutable audit storage, operational monitoring, or incident-response integration;
 - regulatory compliance or platform certification.
 
-The unit/integration tests check code behavior. The synthetic Eval checks selected replies and traces. Passing 53 tests and 50/50 Eval cases shows that this demo behaves as documented; it is not a security certification or a production guarantee.
+The unit/integration tests check code behavior. The synthetic Eval checks selected replies and traces. Passing 53 tests and 50/50 Eval cases shows that the bounded implementation behaves as documented; it is not a security certification or a production guarantee.
 
-## Deployment warning
+## Deployment prerequisites
 
-Do not connect real customer accounts, personal data, or payment permissions to this demo. Before using the design in a real system, finish and review the missing controls listed in [the safety model](docs/safety-model.md). Use approved platform interfaces and give every credential only the permissions it needs.
+The default configuration is designed for local execution with synthetic data and sandbox actions. Before connecting authorized customer accounts, personal data, or financial permissions, implement and review the missing controls listed in [the safety model](docs/safety-model.md). Use approved platform interfaces, isolate each tenant, and give every credential only the permissions it needs.

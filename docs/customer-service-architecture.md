@@ -2,9 +2,9 @@
 
 ## What this document covers
 
-This document explains the customer-service pipeline that is actually in the public code and what is still missing for real use. The repository includes synthetic Browser/Mobile connectors, a local durable inbox/cursor, workers, an outbox, synthetic receipt checks, and human-handoff state. None of it connects to a real platform.
+This document explains the complete customer-service pipeline implemented in the repository and its production integration points. The default local configuration includes synthetic Browser/Mobile connectors, a durable SQLite inbox/cursor, workers, an outbox, receipt reconciliation, and human-handoff state, so the pipeline runs end to end without a real account. Authorized platform adapters can implement the same Connector contract; they are not bundled in this repository.
 
-I keep three things separate below: code that runs now, work still needed before real use, and patterns I learned from my private system but did not publish.
+The sections below keep three boundaries explicit: code that runs now, controls required for a production deployment, and patterns I learned from private deployments without publishing their sensitive implementation details.
 
 I did **not** copy my original browser/mobile adapters, private interfaces, selectors, account sessions, credentials, device details, customer records, or platform payloads into this repository. `BrowserConnector` and `MobileConnector` are new in-memory simulators with invented events and controlled failure cases.
 
@@ -76,9 +76,9 @@ flowchart LR
 | Outbound outbox and receipt checks | **Yes** — synthetic connectors only, no real provider receipt feed |
 | Human takeover workflow | **Yes** — session state, handoff event, acknowledgement, parking, and direct release; no operator console |
 | Connector health snapshot | **Yes** — through `ConnectorSupervisor` |
-| Watchdog, dashboards, alerts, and automated recovery | **Not in this public demo** |
+| Watchdog, dashboards, alerts, and automated recovery | **Production integration point; not included** |
 
-## 1. Synthetic channel connectors
+## 1. Built-in channel connectors
 
 ### Synthetic Browser Connector
 
@@ -96,7 +96,7 @@ Both connectors normalize into the same envelope so the Agent Runtime does not c
 
 Tenant, store, channel, and connector identity must come from trusted deployment context, not customer text, model output, or unverified event fields.
 
-In this public demo, `ConnectorBinding` is immutable constructor configuration:
+In the default local configuration, `ConnectorBinding` is immutable constructor configuration:
 
 ```text
 connector_instance -> tenant_id + channel + store_id + permitted_capabilities
@@ -106,11 +106,11 @@ Normalization copies connector, tenant, channel, and store identity from that bi
 
 For real use, each connector instance needs authentication, a server-side scope, and credentials/storage access limited to its tenant.
 
-The current public `/v1/messages` API accepts caller-supplied tenant/store/customer fields for a synthetic demo. That is not production identity authentication.
+The current `/v1/messages` API accepts caller-supplied tenant/store/customer fields in local fixture mode. That is not production identity authentication.
 
 ## 3. Local durable inbox and connector cursor
 
-### What the code does
+### Inbox persistence and lease behavior
 
 `ConnectorIngestor` polls from the stored opaque cursor. `ChannelStore.record_poll` uses compare-and-swap on the expected cursor, then atomically inserts the sanitized normalized batch and advances that connector's cursor in local SQLite. A late poll cannot overwrite a newer cursor. A unique `(connector_id, external_event_id)` constraint makes replay idempotent; a normalized payload fingerprint turns “same ID, changed content” into a conflict instead of silently advancing the cursor.
 
@@ -127,7 +127,7 @@ Workers claim inbox records with 60-second fenced leases and renew them every 20
 
 ## 4. ConversationWorker and ordering
 
-### What the code does
+### Worker behavior
 
 `ConversationWorker.run_once` claims one inbox item, respects the session's bot/human state, recognizes an explicit synthetic handoff request, and otherwise invokes the existing single Agent Runtime. The item's session key is derived from trusted tenant/channel/store/customer fields.
 
@@ -143,7 +143,7 @@ Its responsibilities are:
 
 The two transactions are bridged by the runtime's message cache: a simulated crash before outbox commit replays the cached decision without duplicating conversation turns, then creates the same deterministic outbox key. The worker is orchestration code, not a second reasoning agent.
 
-The demo normally calls workers one after another, while tests cover SQLite head-of-line claims and lease renewal. It does not promise ordering across machines; a real deployment still needs that.
+The built-in channel runner normally calls workers one after another, while tests cover SQLite head-of-line claims and lease renewal. It does not promise ordering across machines; a real deployment still needs that.
 
 ## 5. Single Agent Runtime
 
@@ -171,11 +171,11 @@ RAG is not implemented in the current repository.
 
 Sensitive actions pass normal code checks for ownership, state, amount, evidence, risk limit, and required approval. The public sandbox shows this with refunds.
 
-A production approval record should contain authenticated operator identity, role, tenant, policy version, proposal hash, decision, timestamp, and reason. The current shared demo operator key is not production identity or authorization.
+A production approval record should contain authenticated operator identity, role, tenant, policy version, proposal hash, decision, timestamp, and reason. The current shared local operator key is not production identity or authorization.
 
 ## 7. Local outbox and outbound idempotency
 
-### What the code does
+### Outbox persistence and lease behavior
 
 The customer reply is not sent inside `ConversationWorker`. After the runtime has finalized its cached decision, `ChannelStore.complete_with_reply` atomically completes the inbox lease and inserts one outbox row with deterministic outbox and delivery keys. A separate `DeliveryWorker` claims and sends it.
 
@@ -195,7 +195,7 @@ Inbox completion and outbox insertion are one local SQLite transaction. Agent de
 
 ## 8. Delivery receipts and reconciliation
 
-### What the code does with synthetic connectors
+### Delivery and receipt behavior
 
 Send-call success and confirmed delivery are modeled as different facts. `DeliveryWorker` interprets the connector's typed delivery disposition. For a Browser unknown result, it immediately calls the synthetic receipt lookup before deciding whether to mark success, retry, or hand off.
 
@@ -212,7 +212,7 @@ There is no asynchronous provider receipt consumer, durable receipt history, or 
 
 ## 9. Ambiguous mobile delivery: never retry blindly
 
-### How the demo handles uncertain delivery
+### How uncertain delivery is handled
 
 A mobile automation call may time out after the application accepted the message. Treating every timeout as failure can send the same reply twice.
 
@@ -241,31 +241,32 @@ An explicit “transfer to a person” message atomically activates `human_activ
 
 `ConversationWorker` and `DeliveryWorker` share a per-session asynchronous lock on one `ChannelStore`; `DeliveryWorker` rechecks the persisted generation immediately before the synthetic send. This forms a tested local send barrier. It is not a cross-process/distributed lock, so production still requires a durable ownership protocol around real remote calls.
 
-`release_handoff` performs only a `human_active` to `bot` transition. A repeated release is idempotent, while any `delivering` or `unknown` outbox item blocks the transition; after explicit resolution or confirmed completion it advances the generation and requeues parked inbound messages. It is a direct store method for tests/demo, not an authenticated operator endpoint. The repository has no human-review console, operator identity, SLA workflow, rich handoff bundle, or production notification integration.
+`release_handoff` performs only a `human_active` to `bot` transition. A repeated release is idempotent, while any `delivering` or `unknown` outbox item blocks the transition; after explicit resolution or confirmed completion it advances the generation and requeues parked inbound messages. It is a direct store method used by tests and local integration code, not an authenticated operator endpoint. The repository has no human-review console, operator identity, SLA workflow, rich handoff bundle, or production notification integration.
 
 ## 11. What I used in the private system
 
 In my private customer-service system, I used browser automation/CDP, Appium with UiAutomator2, Android `AccessibilityService`, an image/OCR bridge, a Decision API with delivery acknowledgements, and health/watchdog processes. I deployed after-sales action executors separately from message workers, so a delivery worker did not automatically get permission to change business data.
 
-That is a description of my experience, not a claim that the private adapters are published here. I left out platform names, selectors, private endpoints, device/account details, my deployment layout, and original adapter source. The public Browser/Mobile connectors are synthetic simulators and do not implement those production integrations.
+That is a description of my experience, not a claim that the private adapters are published here. I left out private selectors, endpoints, device/account details, deployment topology, and original adapter source. The repository's Browser/Mobile connectors implement the same architectural boundary with synthetic events; authorized platform adapters plug in behind that interface.
 
 ## 12. Watchdog and observability
 
-### How I would monitor it
+### Production monitoring contract
 
 A Watchdog should observe and alert; it must not silently invent business outcomes. Useful checks include:
 
 - connector heartbeat and cursor age;
 - inbox lag, expired leases, attempts, and dead-letter growth;
-- per-conversation processing latency;
+- per-conversation processing latency at p50/p95/p99 and throughput;
 - planner/tool/policy latency and error class;
 - outbox age and items stuck in `delivering` or `unknown`;
 - receipt reconciliation lag;
 - approval and human-handoff age;
+- verified resolution, handoff, delivery-confirmation, retry, and unresolved-unknown rates;
 - duplicate suppression and idempotency conflicts;
 - redaction failures and audit-sink health.
 
-Dashboards should report p50/p95/p99 latency, throughput, verified resolution rate, handoff rate, delivery confirmation rate, retry rate, and unresolved unknown deliveries. Every metric needs a denominator and time window.
+Every rate needs an explicit denominator, workflow scope, and time window.
 
 Automated recovery should be limited to safe operations such as renewing/reassigning expired work or restarting a stateless synthetic connector. It must not approve a refund, mark a delivery successful without evidence, or blindly repeat a write.
 
@@ -308,16 +309,16 @@ An approved business action and a delivered customer notification are separate s
 
 ## 14. Failure matrix
 
-| Failure | Safe behavior | What this demo does |
+| Failure | Safe behavior | Current implementation |
 |---|---|---|
 | Duplicate inbound event | One inbox record/decision; replay completed result | Implemented in local SQLite plus Agent Runtime cache |
 | Inbox worker loses/overruns lease | Active workers renew; an expired lease can be reclaimed; stale token is fenced | Implemented for SQLite; no distributed coordinator |
-| Worker fails before runtime decision completes | Requeue with bounded attempts; handoff after exhaustion | Implemented in the demo |
+| Worker fails before runtime decision completes | Requeue with bounded attempts; handoff after exhaustion | Implemented |
 | Worker fails after decision commit but before outbox commit | Cached decision is replayed without duplicate turns; deterministic outbox is then inserted | Implemented and tested with a synthetic crash |
 | Model unavailable | Deterministic fallback or handoff | Rule fallback implemented for the optional provider |
 | Read tool unavailable | State that the fact is unverified; retry within a bound or hand off | Still missing |
 | Business write timeout | Reconcile authoritative operation before retry | Not implemented; current executor is synthetic |
-| Browser timeout after synthetic commit | Look up receipt and mark one outbox success without another remote attempt | Implemented in the demo |
+| Browser timeout after synthetic commit | Look up receipt and mark one outbox success without another remote attempt | Implemented |
 | Mobile result unknown or non-idempotent send lease expires | Latch/mark unknown, activate handoff, and never automatically retry | Implemented with explicit manual resolution |
 | Earlier reply enters delayed retry | Keep later same-session outbox rows behind it | Implemented head-of-line in shared SQLite |
 | Human takes ownership | Freeze queued replies, recheck generation before send, and park later inbound messages | Implemented local barrier; no cross-process production lock or console/authentication |
@@ -354,11 +355,11 @@ The 53-test suite covers the synthetic connectors, store, and workers without ca
 - an explicit handoff parks later messages; release is idempotent and blocked while a reply is delivering or unknown;
 - a simulated crash between runtime completion and outbox commit reuses the cached decision without duplicate turns;
 - policy denial cannot be bypassed by planner output;
-- demonstrated phone/email markers are redacted.
+- built-in phone/email markers are redacted.
 
 The separate 50-case offline Eval still exercises the deterministic core Agent Runtime rather than the connector pipeline. Neither test suite uses a real account or validates production scalability.
 
-## 17. What I would add before real use
+## 17. Production integration checklist
 
 1. Replace constructor trust with authenticated connector identity and server-side tenant/store authorization.
 2. Move local inbox/outbox state to managed storage with partitioned per-session ordering and renewable distributed leases.
@@ -369,4 +370,4 @@ The separate 50-case offline Eval still exercises the deterministic core Agent R
 7. Add metrics, dashboards, production Watchdog checks, alerting, and failure drills.
 8. Complete privacy, security, compliance, platform, capacity, and rollback reviews before real traffic.
 
-This public code gives an interviewer something concrete to run and review without exposing my real platform automation or private operating details.
+This repository runs the full local workflow and keeps the Connector, Tool, policy, delivery, and human-handoff boundaries explicit, making it practical to extend for an authorized deployment without exposing private operating details.

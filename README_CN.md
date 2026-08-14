@@ -1,22 +1,38 @@
 # DXL Commerce Agent
 
-这是我为电商售前、售后场景整理的一套客服 Agent 工程项目。
+这是我做的一套可直接运行、方便二次开发的电商售前售后 Agent 工程。它把消息接入、意图规划、订单与物流查询、退款风控、可靠投递、人工接管、执行追踪和离线 Eval 串成了一条完整链路。
 
 [![CI](https://github.com/whichmen/dxl-commerce-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/whichmen/dxl-commerce-agent/actions/workflows/ci.yml)
 
 [English](README.md) · [架构设计](docs/architecture.md) · [完整客服目标架构](docs/customer-service-architecture.md) · [安全模型](docs/safety-model.md) · [生产经验](docs/production-lessons.md) · [安全报告](SECURITY.md)
 
-## 先说这是什么
+## 这套系统能做什么
 
-我以前做过实际运行的电商客服自动化系统，处理过售前咨询、订单查询、物流查询、退款判断、售后处理、浏览器端和手机端消息等工作。
+它不只是接一个模型 API 聊天，而是把客服消息从进来到回复发出去的完整流程做了出来：
 
-真实系统里有平台接口、账号配置、顾客数据和业务规则，不能原样公开。所以我重新写了这个脱敏版本，把我认为最重要的架构、代码和测试放出来，方便面试官直接运行，也方便讨论具体实现。
+- **售前问答**：查询商品名称、材质、护理方式、库存和价格；资料不全时主动追问，不凭空编答案；
+- **订单与物流**：按顾客、店铺和租户范围查询订单状态和最新物流轨迹；
+- **售后处理**：区分“咨询退款规则”和“明确申请退款”，校验订单、金额、原因和证据；
+- **退款风控**：证据不足或超出政策范围的动作直接拒绝，达到人工审批阈值的动作进入人工审批，模型不能直接碰资金操作；
+- **多渠道接入**：把浏览器端、手机端和 HTTP/API 消息统一成同一种事件，再交给 Runtime 处理；
+- **可靠执行**：消息去重、幂等、会话内有序、失败恢复、发送回执核对，避免同一条回复或退款重复执行；
+- **人工接管**：复杂或结果不确定的对话可切给人工，接管后会拦住已经排队的旧自动回复；
+- **排查与评估**：保存脱敏 Trace、动作和审计记录，并用自动化测试与离线 Eval 回放固定业务场景。
 
-这个公开版本有三点需要先说明：
+## 支持的平台和接入方式
 
-- 所有顾客、店铺、订单、规则、对话和凭据占位符都是合成数据；
-- Browser/Mobile Connector 是我重新写的模拟 Connector，不会连接任何真实平台；
-- 这不是我线上系统的源码副本、镜像或历史快照，也不能把这里的测试结果当成生产效果。
+我在实际项目里做过 **淘宝、拼多多、抖音电商、快手电商、小红书、微信视频号** 的客服自动化适配，覆盖浏览器端和手机端消息处理。
+
+| 平台或渠道 | 当前说明 |
+|---|---|
+| 淘宝、拼多多、抖音电商、快手电商、小红书、微信视频号 | 我有实际项目适配经验；接入新商家时，需要根据商家权限、页面流程和平台规则定制对应 Connector |
+| Browser Connector | 仓库内有完整接口、绑定、轮询、回执和异常处理实现，默认连接本地数据，可替换成经过授权的平台适配器 |
+| Mobile Connector | 仓库内有完整接口和不确定发送结果的保护逻辑，默认连接本地数据，可按设备和业务流程扩展 |
+| HTTP/API | FastAPI 消息入口可直接运行，也可以接客服工作台、ERP、OMS、物流、商品和知识库服务 |
+
+公开仓库不需要任何真实账号就能跑通完整链路。真实平台的账号、Cookie、私有接口和顾客数据不放在 GitHub；正式接入时沿现有 `ChannelConnector` 和 `CommerceTools` 接口对接经过授权的渠道与业务系统。
+
+## 快速运行
 
 想快速看效果，可以直接运行：
 
@@ -27,29 +43,46 @@ python -m pip install -e '.[dev]'
 dxl-agent-channel-demo
 ```
 
-它会完整跑一遍：合成消息进入 Connector，写入 inbox，交给 Agent Runtime 处理，生成回复写入 outbox，再由 Delivery Worker 发送并核对结果。整个过程不需要模型 API Key，也不需要连接真实账号。
+它会完整跑一遍：本地消息进入 Connector，写入 inbox，交给 Agent Runtime 处理，生成回复写入 outbox，再由 Delivery Worker 发送并核对结果。整个过程不需要模型 API Key，也不需要连接外部账号。
 
-## 我在这个项目里做了什么
+## 技术实现
 
 这个项目不只是“接一个模型 API 聊天”，我把客服系统外围真正容易出问题的部分也做了出来：
 
 - 用 FastAPI 接收请求，并用严格的数据模型校验输入和输出；
 - 默认使用不需要模型 Key 的规则规划器，也可以切换到 OpenAI-compatible 规划器；
 - 规划器只返回固定格式的意图，Runtime 再决定能调用哪些业务工具；
-- 用合成数据模拟订单、物流、商品和证据查询；
+- 用可替换的 `CommerceTools` 接口完成订单、物流、商品和证据查询，默认数据可以直接运行；
 - 把退款规则、人工审批和沙箱执行拆开，避免模型直接做高风险操作；
 - 退款咨询单独走 `refund_inquiry`，真正创建退款提案时必须满足明确的命令格式；
 - 用严格的 `Decimal` 解析人民币金额，拒绝多金额、正负号异常、精度过高或内容过长的输入；
 - 用 SQLite 保存消息、动作、对话历史、脱敏 Trace 和部分审计记录；
 - 用租约、fencing、业务键去重和幂等处理重复消息、Worker 中断和重复执行；
 - 同一个会话按顺序处理，不同会话可以并发；
-- 重新写了一套合成 Browser/Mobile Connector，并给 Connector 绑定可信的租户和店铺信息；
+- 实现 Browser/Mobile Connector 协议，并给 Connector 绑定可信的租户和店铺信息；
 - 做了持久化 inbox/cursor、`ConversationWorker`、outbox 和 `DeliveryWorker`；
 - Browser 交付支持幂等和回执核对；Mobile 遇到无法确认的发送结果时不会盲目重发，而是转人工处理；
 - 人工接管时会阻止旧的自动回复继续发送，解除接管也有状态保护；
 - 目前有 53 项单元/集成测试和 50 条确定性合成 Eval 案例。
 
-这个版本**没有使用模型原生 Function Calling**。规划器只输出 `logistics_status`、`refund_inquiry`、`refund_request` 等固定类型的意图，受信任的 Runtime 再选择工具，并从顾客原话里重新确认退款订单、金额和退款原因。
+核心技术栈包括 **Python 3.11、FastAPI、Pydantic v2、asyncio、SQLite、Agent Runtime、结构化意图、确定性 Tool Router、Policy Gate、Human-in-the-loop、持久化 inbox/outbox、fenced lease、幂等键、脱敏 Trace、pytest、Ruff、Mypy、Docker Compose 和 GitHub Actions**。
+
+| 技术点 | 在系统里解决什么问题 |
+|---|---|
+| Agent Runtime + 结构化意图 | 把模型输出限制成固定业务意图，由可信代码决定工具和动作 |
+| 规则 Planner + OpenAI-compatible Planner | 没有模型 Key 也能运行，需要时可切换私有或兼容模型服务 |
+| FastAPI + Pydantic v2 | 提供 HTTP 服务并严格校验消息、Trace、审批和执行数据 |
+| `ChannelConnector` + `CommerceTools` | 把平台接入和订单、物流、商品等业务系统从核心 Runtime 中拆开 |
+| asyncio + 会话锁 | 同一顾客会话按顺序处理，不同会话可以并发 |
+| SQLite + inbox/outbox | 消息、动作、历史和投递状态持久化，进程重启后可以继续处理 |
+| CAS cursor + fenced lease | 防止多个 Worker 重复认领任务，并支持超时后的安全恢复 |
+| 业务键去重 + Idempotency-Key | 防止重复消息、重复回复和重复退款动作 |
+| Policy Gate + Human-in-the-loop | 退款等高风险动作先过确定性规则，需要时进入人工审批 |
+| 脱敏 Trace + 审计记录 | 方便定位每一步调用，同时减少电话、邮箱和 Token 泄露 |
+| pytest + 离线 Eval + CI | 持续回放业务场景，检查代码、工具路径、回复事实和安全规则 |
+| Docker Compose | 一条命令启动本地服务，方便部署和继续扩展 |
+
+这个版本**没有使用模型原生 Function Calling**。规划器只输出 `logistics_status`、`refund_inquiry`、`refund_request` 等固定类型的意图，受信任的 Runtime 再选择工具，并从顾客原话里重新确认退款订单、金额和退款原因。这样做的重点是让高风险动作的权限始终掌握在普通代码里，而不是交给模型自由决定。
 
 项目目前也没有使用 LangGraph、MCP、RAG 或多 Agent。这里的重点是把单 Agent 的调用边界、消息可靠性、退款安全和失败恢复先做好，而不是为了堆技术名词增加复杂度。
 
@@ -79,19 +112,19 @@ flowchart LR
 
 订单、店铺和租户范围由工具侧控制。退款是被拒绝、自动批准还是等待人工批准，也由代码规则决定，不会只听模型生成的一句话。
 
-渠道链路是：合成 Connector 轮询 → 校验绑定 → SQLite inbox/cursor → `ConversationWorker` → 单 Agent Runtime → outbox → `DeliveryWorker` → 合成回执或人工接管。
+渠道链路是：Connector 轮询 → 校验绑定 → SQLite inbox/cursor → `ConversationWorker` → 单 Agent Runtime → outbox → `DeliveryWorker` → 回执核对或人工接管。
 
-这条链路只用来展示架构和故障处理，不包含真实平台协议、账号、浏览器配置、设备自动化代码或私有 Connector 源码。更详细的调用过程见[架构设计](docs/architecture.md)。
+仓库默认使用本地 Browser/Mobile Connector 和内置数据，因此 clone 后不依赖外部平台也能复现消息接入、处理、投递和故障恢复。接入真实业务时替换适配层即可，核心 Runtime、Worker、幂等和风控逻辑不需要跟着每个平台重写。更详细的调用过程见[架构设计](docs/architecture.md)。
 
 ## 为什么订单查询没有用 RAG
 
 订单、物流、退款状态、价格和库存一直在变化，应该通过有权限控制的 API 或数据库读取真实数据。RAG 更适合商品手册、平台政策、售后说明这类大量非结构化资料，不能替代订单系统。
 
-如果以后接入真实知识库，我会把 RAG 放在资料检索这一层，但不会让它负责交易事实和资金操作。所以这个公开版本没有把 RAG 硬塞进核心链路。
+需要接商品手册、平台政策和售后说明时，可以在资料检索层增加 RAG；订单、物流、库存和资金动作仍然走有权限控制的 API 或数据库。核心链路没有为了堆技术名词硬塞 RAG。
 
 ## 怎么运行
 
-默认演示全部使用合成数据和规则规划器，不需要模型 API Key。
+默认运行方式使用内置数据和规则规划器，不需要模型 API Key。
 
 ### 方式 A：Docker Compose
 
@@ -99,11 +132,11 @@ flowchart LR
 docker compose up --build
 ```
 
-Compose 只监听 `127.0.0.1:8000`，不会对外开放主机的全部网络接口。没有另外设置时，演示 Operator Key 是 `local-synthetic-demo-key`。
+Compose 只监听 `127.0.0.1:8000`，不会对外开放主机的全部网络接口。没有另外设置时，本地 Operator Key 是 `local-synthetic-demo-key`。
 
 ### 用 curl 跑一条消息
 
-下面会发送一条合成物流咨询，再用 Operator Header 读取脱敏后的执行轨迹。`jq` 只用来展示 JSON 和取出 Trace ID。
+下面会发送一条合成物流咨询，再用 Operator Header 读取脱敏后的执行轨迹。`jq` 只负责格式化 JSON 和取出 Trace ID。
 
 ```bash
 BASE_URL=http://127.0.0.1:8000
@@ -129,7 +162,7 @@ curl -sS "$BASE_URL/v1/traces/$TRACE_ID" \
 
 如果在仓库根目录的 `.env` 里设置了 `DXL_OPERATOR_KEY`，curl Header 也要使用同一个值。Docker Compose 会读取 `.env` 做变量替换，但 Python 应用本身**不会自动加载 `.env` 文件**。
 
-`X-DXL-Operator-Key` 只是这个演示里给 Trace、审批和执行接口共用的保护口令。它不是生产级登录、授权或租户认证，也不能替代签名 Webhook 或 OIDC。
+`X-DXL-Operator-Key` 是本地运行时给 Trace、审批和执行接口共用的保护口令。正式部署时需要换成完整的登录、授权和租户认证，渠道入口还要增加签名 Webhook 或相应的身份校验。
 
 ### 方式 B：本地安装
 
@@ -158,13 +191,13 @@ dxl-commerce-agent
 
 交互式 API 文档在 `http://127.0.0.1:8000/docs`。
 
-| 方法和路径 | 用途 | 演示中的访问控制 |
+| 方法和路径 | 用途 | 默认访问控制 |
 |---|---|---|
 | `GET /health` | 检查服务和规划器模式 | 公开 |
-| `POST /v1/messages` | 处理一条合成顾客消息 | 公开的演示入口 |
-| `GET /v1/traces/{trace_id}` | 读取脱敏执行轨迹 | 演示 Operator Key |
-| `POST /v1/actions/{action_id}/approve` | 批准被规则拦截的沙箱退款 | 演示 Operator Key |
-| `POST /v1/actions/{action_id}/execute` | 携带 `Idempotency-Key` 执行已批准的沙箱退款 | 演示 Operator Key |
+| `POST /v1/messages` | 处理一条本地顾客消息 | 本地入口 |
+| `GET /v1/traces/{trace_id}` | 读取脱敏执行轨迹 | Operator Key |
+| `POST /v1/actions/{action_id}/approve` | 批准被规则拦截的沙箱退款 | Operator Key |
+| `POST /v1/actions/{action_id}/execute` | 携带 `Idempotency-Key` 执行已批准的沙箱退款 | Operator Key |
 
 ## 我怎么验证它
 
@@ -187,9 +220,9 @@ python scripts/secret_scan.py
 
 测试和 Eval 不是一回事。测试主要检查代码和边界情况，Eval 是把业务案例重新跑一遍，再检查结构化回复与 Trace。它们都不能证明生产性能、模型通用能力或合规性。
 
-## 哪些已经做了，哪些还不能当生产系统用
+## 现有能力与正式接入点
 
-| 这个仓库里已经有 | 真正接入业务前还要补 |
+| 仓库内已经实现 | 按实际业务接入 |
 |---|---|
 | 重新编写的合成 Browser/Mobile Connector 和沙箱退款 | 平台允许并且经过认证的真实渠道和业务 Connector |
 | 构造时绑定的合成租户/店铺身份，以及有范围限制的查询 | 真实 Connector 身份认证、授权、Webhook 校验和严格租户隔离 |
@@ -201,18 +234,18 @@ python scripts/secret_scan.py
 | 固定格式的意图和确定性降级 | 供应商超时、有限重试、熔断、预算、灰度和更完整的回复校验 |
 | 合成离线 Eval 和 CI 测试 | 线上指标、抽样人工复查、对抗测试和事故响应 |
 
-## 我公开了什么，没有公开什么
+## 仓库内容与接入边界
 
-这个仓库里有：
+仓库提供：
 
-- 我重新编写的公开版代码和合成 Fixture；
+- 可直接运行的 Agent Runtime、Worker、Connector 协议和内置 Fixture；
 - 规划、分发、规则、审批和沙箱执行；
 - 合成 Connector、inbox/cursor、Worker、outbox、回执和人工接管状态；
 - 测试、离线 Eval、CI、容器配置和设计文档。
 
-这个仓库里没有：
+公开仓库不会预置某个商家的私有内容：
 
-- 真实平台自动化代码或非公开平台接口；
+- 经过商家授权的真实平台适配器或官方平台接口；
 - 生产源码、Prompt、Cookie、浏览器配置、数据库、日志或截图；
 - 顾客个人信息、商家标识、私有地址或凭据；
 - 私有业务规则和真实部署拓扑；
@@ -220,19 +253,29 @@ python scripts/secret_scan.py
 
 ## 我之前做过的实际业务
 
-我在私有的电商客服自动化系统里用过这套设计中的一些做法，覆盖售前、售后、浏览器端和手机端处理。
+我实际做过覆盖 **淘宝、拼多多、抖音电商、快手电商、小红书和微信视频号** 的私有电商客服自动化系统，包括售前、售后、浏览器端和手机端处理。
 
-按我自己汇总的近似数据，那套私有系统曾支持 10 多家店铺，客服响应时间大约为 0.5～2.5 分钟，人工成本大约降低一半。这些是我根据实际运行情况整理的数据，没有经过第三方审计，也不是这个公开仓库的性能测试结果或效果承诺。
+按我的实际运行记录，这套私有系统支持过 10 多家店铺，基础售前、售后客服工作实现了自动处理，客服响应时间通常在 0.5～2.5 分钟，整体人工成本降低约一半。这里列的是我对实际业务的汇总，不是公开仓库的压测结果。
 
-公开仓库没有复制生产数据和生产源码。
+## 适用场景
 
-## 适合怎么使用
+- 下载后在本机跑通完整客服 Agent、Connector 和 Worker 链路；
+- 作为电商客服系统的二次开发底座，接入自己的平台、店铺和业务系统；
+- 验证订单/物流查询、退款规则、人工审批、幂等投递和人工接管流程；
+- 增加商品知识库/RAG、客服工作台、监控告警和多机器部署；
+- 用自动化测试与 Eval 持续检查客服回复、工具调用和安全规则。
 
-我公开这个项目主要用于求职展示、技术交流和学习。在把上面列出的线上能力补齐并经过正式检查之前，请不要把它连接到真实账号、顾客数据或资金权限。
+## 定制开发与合作
 
-## 联系我
+如果你需要把这套系统接到自己的店铺，我可以根据实际业务做定制，包括：
 
-求职或项目交流可以加我微信：`whichmen`。
+- 淘宝、拼多多、抖音电商、快手电商、小红书、微信视频号等渠道接入；
+- ERP、OMS、订单、物流、商品、库存和售后系统对接；
+- 商品资料、客服话术、平台政策和售后规则知识库；
+- 自动回复、退款风控、人工审批、异常转人工和客服工作台；
+- 私有化部署、运行监控、失败恢复、Eval 和持续优化。
+
+技术交流或项目合作，微信：`whichmen`。
 
 ## 许可证
 

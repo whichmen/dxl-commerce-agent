@@ -68,7 +68,7 @@ class AgentRuntime:
         operator_key: str | None = None,
     ) -> None:
         if not demo_mode:
-            raise ValueError("The public reference implementation only supports demo mode")
+            raise ValueError("The built-in runtime currently supports local sandbox mode only")
         self.store = store
         self.tools = tools
         self.policy = policy

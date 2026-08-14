@@ -178,7 +178,7 @@ class RuleBasedPlanner:
     """Deterministic stand-in for an LLM planner.
 
     The surrounding runtime is intentionally model-agnostic. This planner keeps the
-    public demo reproducible and makes CI possible without an API key.
+    default local path reproducible and makes CI possible without an API key.
     """
 
     injection_markers = (

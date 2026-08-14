@@ -2,14 +2,14 @@
 
 ## What this repo is
 
-I built DXL Commerce Agent as a small, runnable example of a commerce-support Agent Runtime. The code keeps four things separate:
+I built DXL Commerce Agent as a runnable, extensible commerce-support Agent Runtime. The code keeps four things separate:
 
 1. intent planning;
 2. authoritative business facts;
 3. deterministic permission and policy decisions;
 4. delivery reliability and inspectable execution state.
 
-I wrote this public version from scratch around made-up test data. The Browser and Mobile connectors are simulators. I did not copy over production source, customer data, credentials, real platform connectors, or private deployment details.
+The default local configuration uses synthetic fixtures and built-in Browser/Mobile connector simulators, so the complete pipeline can run without a real account. Production source, customer data, credentials, private platform adapters, and deployment details are deliberately excluded; the Connector and Tool interfaces are the integration points for authorized deployments.
 
 ## What the current code actually does
 
@@ -41,7 +41,7 @@ This is **structured intent plus deterministic runtime dispatch**, not native Fu
 
 The optional model is an intent planner, not an autonomous tool executor or response writer. Its output is parsed into known intent/entity fields. Transport or parse errors fall back to the deterministic rule planner. The final customer response is currently composed by deterministic templates.
 
-## Browser and mobile demo pipeline
+## Built-in Browser and Mobile pipeline
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
     CS -. health snapshot .-> MC
 ```
 
-The connector binding supplies tenant, store, and channel identity outside each invented event. Ingestion verifies that scope, redacts text, and atomically commits a synthetic poll batch with a cursor compare-and-swap. `ChannelStore` retains normalized payload and connector-binding fingerprints, exposes only the oldest claimable row in each session, and uses local SQLite inbox/outbox records with 60-second fenced leases renewed every 20 seconds by active workers.
+The connector binding supplies tenant, store, and channel identity outside each synthetic event. Ingestion verifies that scope, redacts text, and atomically commits a poll batch with a cursor compare-and-swap. `ChannelStore` retains normalized payload and connector-binding fingerprints, exposes only the oldest claimable row in each session, and uses local SQLite inbox/outbox records with 60-second fenced leases renewed every 20 seconds by active workers.
 
 `ConversationWorker` invokes the same runtime described above. Runtime decision/trace/cache finalization is one transaction; inbox completion plus deterministic outbox insertion is a later, separate transaction. A tested crash between them replays the cached decision without duplicating turns, then inserts the same outbox key.
 
@@ -73,9 +73,9 @@ The connector binding supplies tenant, store, and channel identity outside each 
 
 ### FastAPI ingress
 
-`POST /v1/messages` validates a strict envelope containing tenant, channel, store, customer, message, text, and synthetic evidence IDs. Unknown request fields are rejected. The endpoint itself is open because this is a local demo, not an authenticated channel integration.
+`POST /v1/messages` validates a strict envelope containing tenant, channel, store, customer, message, text, and synthetic evidence IDs. Unknown request fields are rejected. In the default local configuration, the endpoint is unauthenticated and expected to remain on loopback; an authorized channel integration must supply authenticated, server-side identity and scope.
 
-Trace, approval, and execution endpoints require `X-DXL-Operator-Key`. This is a shared demo key checked with constant-time comparison. It is not an identity provider, role model, tenant authorization system, or production authentication design.
+Trace, approval, and execution endpoints require `X-DXL-Operator-Key`. This is a shared local key checked with constant-time comparison. It is not an identity provider, role model, tenant authorization system, or production authentication design.
 
 ### Scoped keys and message deduplication
 
@@ -89,13 +89,13 @@ The local lease protects one exact message ID when processes share the same SQLi
 
 The runtime loads a bounded number of recent turns. Phone numbers, email addresses, and token-like strings are redacted before user text is persisted. The **current message is also redacted before either planner receives it**, including in OpenAI-compatible mode. Recent history supplied to the model comes from that redacted store and is further length-bounded.
 
-This is a small demonstrator, not a complete DLP system. Addresses, names, arbitrary identifiers, images, and many secret formats require broader production controls.
+The built-in redactor intentionally covers a bounded set of patterns; it is not a complete DLP system. Addresses, names, arbitrary identifiers, images, and many secret formats require broader production controls.
 
 ### Planners
 
 Both planners implement the same asynchronous contract:
 
-- **RuleBasedPlanner** deterministically classifies a small set of Chinese/English demo phrases and extracts synthetic order/SKU identifiers.
+- **RuleBasedPlanner** deterministically classifies a bounded set of built-in Chinese/English phrases and extracts synthetic order/SKU identifiers.
 - **OpenAICompatiblePlanner** calls a configurable chat-completions endpoint for a JSON intent/entity decision. Known fields are parsed into `DecisionPlan`; invalid transport, JSON, intent, order ID, or SKU output falls back to rules.
 
 The model adapter does not use native function calling, does not execute tools, and is not exercised by the deterministic offline Eval suite. Authorization never depends on which planner is selected.
@@ -136,7 +136,7 @@ One SQLite action is retained per scoped refund business key `(tenant, store, cu
 
 ### Approval and sandbox execution
 
-Approval changes a pending action to `approved`. Execution requires both the demo operator key at the API boundary and a caller-provided `Idempotency-Key`. SQLite uses `BEGIN IMMEDIATE`, state checks, and unique indexes so the included concurrency test shows two connections cannot execute the same action twice.
+Approval changes a pending action to `approved`. Execution requires both the configured local operator key at the API boundary and a caller-provided `Idempotency-Key`. SQLite uses `BEGIN IMMEDIATE`, state checks, and unique indexes so the included concurrency test shows two connections cannot execute the same action twice.
 
 Reusing the original idempotency key returns the recorded result. Trying a different key after success returns a conflict. The backend is a synthetic local executor that returns a synthetic refund ID; there is no real payment or platform call.
 
@@ -146,7 +146,7 @@ This code does **not** reconcile an uncertain timeout against a real external ba
 
 Each new handled message persists a structured trace containing the hashed public session ID, intent, status, tool steps, policy/action steps, selected public arguments, latency for local planner/tool calls, and named grounding fields. SQLite also records selected audit events for trace creation and action proposal/approval/execution.
 
-This is useful for demonstration and Eval, but it is not an immutable enterprise audit system. There is no trace search UI, external telemetry pipeline, signed log, retention policy, or role-based audit access.
+This provides inspectable local execution records for debugging and Eval, but it is not an immutable enterprise audit system. There is no trace search UI, external telemetry pipeline, signed log, retention policy, or role-based audit access.
 
 ### Response construction
 
@@ -181,8 +181,8 @@ The tests and Eval exercise these current invariants:
 - one scoped order has one persisted refund workflow;
 - an approved action cannot execute twice, including across two SQLite connections;
 - messages in one process are serialized by session;
-- current messages and stored history redact the demonstrated phone/email patterns;
-- operator endpoints reject missing or incorrect shared demo keys.
+- current messages and stored history redact the built-in phone/email patterns;
+- operator endpoints reject missing or incorrect shared local keys.
 - synthetic connector identity fields come from immutable bindings rather than untrusted event metadata;
 - connector event/cursor persistence and inbox-completion/outbox insertion are locally atomic;
 - stale poll cursors and same-ID changed payloads fail closed;
@@ -197,7 +197,7 @@ These are properties of this bounded synthetic implementation, not claims of pro
 
 ## Why one agent loop
 
-Intent recognition and the relevant business action share a small context in this demo. Adding multiple agents would add coordination surface without creating a stronger permission boundary. Independent production workloads—such as proactive logistics monitoring, refund audit, or knowledge maintenance—could later become separate workers with explicit events and permissions.
+Intent recognition and the relevant business action share a small context in the current runtime. Adding multiple agents would add coordination surface without creating a stronger permission boundary. Independent production workloads—such as proactive logistics monitoring, refund audit, or knowledge maintenance—could later become separate workers with explicit events and permissions.
 
 ## Where RAG could fit
 

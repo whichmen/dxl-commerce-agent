@@ -41,7 +41,7 @@ class ApprovalRequest(StrictModel):
         min_length=2,
         max_length=64,
         pattern=r"^[A-Za-z0-9_.-]+$",
-        description="Audit label supplied by an authenticated demo operator",
+        description="Audit label supplied by an authenticated operator",
     )
 
 
@@ -129,10 +129,10 @@ def create_app(runtime: AgentRuntime | None = None) -> FastAPI:
     service = runtime or AgentRuntime.from_settings(Settings.from_env())
     application = FastAPI(
         title="DXL Commerce Agent",
-        version="0.1.0",
+        version="0.2.0",
         description=(
-            "Privacy-safe, synthetic reference implementation. It has no real platform "
-            "credentials or production integrations."
+            "Runnable commerce customer-service Agent runtime with typed planning, "
+            "scoped tools, policy gates, durable channel workers, and human handoff."
         ),
     )
     application.state.runtime = service

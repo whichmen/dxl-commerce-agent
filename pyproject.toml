@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "dxl-commerce-agent"
 version = "0.2.0"
-description = "A runnable customer-service agent demo with synthetic data, delivery workers, policy checks, and offline evals"
+description = "A runnable and extensible commerce customer-service Agent runtime with durable workers, policy gates, human handoff, and offline evals"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

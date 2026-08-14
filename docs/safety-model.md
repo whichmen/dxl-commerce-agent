@@ -2,7 +2,7 @@
 
 ## Scope
 
-This page lists the safety checks that are actually in the public code and the important things it still does not do. I wrote the project with synthetic fixtures and sandbox-only actions. It is a runnable portfolio project, not a security certification or a production-ready customer-service system.
+This page lists the safety checks implemented in the repository and the controls that belong at the production integration boundary. The default local configuration uses synthetic fixtures and sandbox-only actions, so the full workflow is runnable without real customer accounts or financial authority. The document is an engineering control inventory, not a security certification.
 
 ## Safety objective
 
@@ -16,10 +16,10 @@ Untrusted inputs include:
 
 - customer text and supplied synthetic evidence identifiers;
 - output from either planner;
-- tenant, channel, store, customer, message, and approver labels received by this demo API;
+- tenant, channel, store, customer, message, and approver labels received by the local API;
 - environment variables and local configuration.
 
-Trusted code in this demo includes:
+Trusted code in the current implementation includes:
 
 - Pydantic request/response models;
 - canonical scoped-key construction;
@@ -37,10 +37,10 @@ The public `/v1/messages` endpoint does not authenticate the claimed tenant/cust
 |---|---|---|
 | Planner proposes an unsafe path | Planner returns only a `DecisionPlan`; runtime owns deterministic dispatch and policy | This is not a general formal verifier |
 | Simple prompt-injection phrase | Rule planner recognizes a bounded marker set and returns no tool path | Marker detection is intentionally incomplete; authorization must not depend on it |
-| Cross-customer/store fixture lookup | Order/product/evidence tools filter trusted runtime arguments by available scope | API caller identity is not authenticated in this demo |
+| Cross-customer/store fixture lookup | Order/product/evidence tools filter trusted runtime arguments by available scope | API caller identity is not authenticated in the default local configuration |
 | Hallucinated transaction details | Replies use synthetic tool results and named `facts_used` fields | There is no standalone semantic response validator |
-| Unsafe refund | Code checks existing refund, amount, paid amount, maximum, evidence, and approval threshold | Rules are small synthetic examples, not legal/business policy |
-| Inquiry mistaken for a write | `refund_inquiry` is a no-tool route; an anchored explicit-action grammar gates `refund_request` | The grammar covers only this synthetic Chinese demo |
+| Unsafe refund | Code checks existing refund, amount, paid amount, maximum, evidence, and approval threshold | The included synthetic rules are examples, not legal/business policy |
+| Inquiry mistaken for a write | `refund_inquiry` is a no-tool route; an anchored explicit-action grammar gates `refund_request` | The built-in grammar covers only the included Chinese action forms |
 | Ambiguous money text | `Decimal` parsing rejects multiple, signed, over-precise, and oversized CNY amounts | Currency/locale handling is intentionally narrow |
 | Duplicate message/action | Expiring SQLite claim plus cached response for an exact message ID; one refund business key per scoped order | Different messages in one session are not ordered across processes or hosts |
 | Untrusted channel scope | Scope comes from immutable `ConnectorBinding`; inbox/outbox snapshot it and delivery rejects a changed binding | Binding is not authenticated production identity |
@@ -57,7 +57,7 @@ The public `/v1/messages` endpoint does not authenticate the claimed tenant/cust
 
 Before invoking either planner, the runtime applies its basic redactor to the **current customer message**. This also applies in OpenAI-compatible mode. Recent history comes from redacted persisted turns, and the model adapter sends at most four recent entries truncated to 500 characters each plus a current message truncated to 2,000 characters.
 
-The demonstrated redactor covers Chinese mobile-number patterns, email patterns, and a limited set of bearer/API-key-like strings. It does not claim to cover names, addresses, payment data, international telephone formats, images, arbitrary identifiers, or all secret encodings.
+The built-in redactor covers Chinese mobile-number patterns, email patterns, and a limited set of bearer/API-key-like strings. It does not claim to cover names, addresses, payment data, international telephone formats, images, arbitrary identifiers, or all secret encodings.
 
 ## Actual side-effect protocol
 
@@ -70,18 +70,18 @@ The implemented sandbox refund flow is:
 5. Resolve evidence through matching tenant/store/customer/order scope when required.
 6. Evaluate deterministic amount, state, evidence, and approval rules.
 7. Deny without creating an action, or create/reuse one scoped refund action.
-8. Require the demo operator key on approval and execution API calls.
+8. Require the configured local operator key on approval and execution API calls.
 9. Require an approved state plus caller-generated `Idempotency-Key` to execute.
 10. Atomically record one synthetic result and change the action to `succeeded`.
 11. Return the recorded result when the original idempotency key is replayed; reject a different key after success.
 
 The model cannot approve or execute its own proposal. The executor never contacts a financial or commerce platform.
 
-Ambiguous external writes and backend timeout checks are **not implemented** because this demo has no external write backend. Those checks are required before enabling real side effects.
+Ambiguous external writes and backend timeout checks are **not implemented** because the repository has no external write backend. Those checks are required before enabling real side effects.
 
 ## Prompt-injection stance
 
-String detection is a monitoring and demo behavior, not the primary authorization control. Even if the optional planner returns a mistaken intent, it cannot name or call an arbitrary tool. Trusted runtime code chooses among fixed branches, scopes lookup arguments, re-derives policy-relevant refund facts, and runs deterministic policy before creating a sandbox action.
+String detection is a bounded monitoring signal, not the primary authorization control. Even if the optional planner returns a mistaken intent, it cannot name or call an arbitrary tool. Trusted runtime code chooses among fixed branches, scopes lookup arguments, re-derives policy-relevant refund facts, and runs deterministic policy before creating a sandbox action.
 
 There is no RAG or external free-text tool result in the current implementation. If either is added, returned text must remain data rather than instructions and must not expand runtime authority.
 
@@ -99,12 +99,12 @@ The current trace/audit implementation is not tamper-evident, append-only storag
 | Exact duplicate already in flight | Fails fast with HTTP 409 and `Retry-After: 1`; an abandoned 60-second claim can later be reclaimed |
 | Unknown or unsupported intent | Returns a clarification or out-of-scope template without tools |
 | Scoped order/product not found | Returns a non-invented not-found/clarification response |
-| Refund-policy question or missing amount | Explains the demo rules or asks for a precise amount; no action is created |
+| Refund-policy question or missing amount | Explains the configured sandbox rules or asks for a precise amount; no action is created |
 | Negative, over-precise, or excessively long refund amount | Fails closed with clarification; no action is created |
 | Missing required verified evidence | Policy denies; no action is created |
 | Refund above paid amount or policy maximum | Policy denies; no action is created |
 | Amount above auto-approval threshold | Stores `pending_approval`; execute is rejected until approval |
-| Missing/wrong demo operator key | Operator endpoint returns 401; no configured key returns 503 |
+| Missing/wrong local operator key | Operator endpoint returns 401; no configured key returns 503 |
 | Execution before approval | Returns conflict through the API |
 | Original execution idempotency key replayed | Returns the stored synthetic result with `deduplicated=true` |
 | Different execution key used after success | Returns conflict rather than executing again |
@@ -114,7 +114,7 @@ The current trace/audit implementation is not tamper-evident, append-only storag
 | Mobile retryable before remote attempt | Requeues with the same stable delivery key |
 | Mobile ambiguity after remote attempt or expired send lease | Marks `unknown`, activates handoff, and performs no automatic retry |
 | Connector binding, outbox payload hash, or returned delivery key mismatch | Cancels or marks unknown and activates handoff; never records success |
-| Human handoff in the local demo | Advances session generation, freezes queued automatic replies, and parks later inbox items |
+| Human handoff in the local workflow | Advances session generation, freezes queued automatic replies, and parks later inbox items |
 | Resume with an unresolved unknown delivery | Rejected until explicit synthetic manual resolution |
 
 Generic business-tool retries, external-write timeout handling, a circuit breaker, token/cost budgets, rate limiting, an authenticated human console, and audit-sink fail-closed behavior are not implemented. The synthetic channel path does include limited inbox/outbox retries, local human-active state, synthetic receipt handling, and cautious handoff when delivery is unclear.
@@ -128,7 +128,7 @@ At the documented repository snapshot:
 
 Unit/integration tests and Eval are different evidence. Tests directly exercise implementation behavior and edge cases; Eval grades structured runtime trajectories for synthetic scenarios. Passing either does not establish production security, model robustness, compliance, latency, cost, or business outcomes.
 
-## What I would add before real use
+## Production integration checklist
 
 Before using real accounts, data, or financial authority, add and independently review:
 
