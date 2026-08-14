@@ -73,7 +73,7 @@ flowchart LR
     H --> F
     F --> I[生成最终文字或图片回复]
     I --> J[Worker 发回平台]
-    J --> K[/v1/worker/ack 记录回执]
+    J --> K["POST /v1/worker/ack<br/>记录发送回执"]
 ```
 
 这里的大模型不是装饰：

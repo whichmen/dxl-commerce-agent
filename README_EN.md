@@ -73,7 +73,7 @@ flowchart LR
     H --> F
     F --> I[Final text or image response]
     I --> J[Worker sends to platform]
-    J --> K[/v1/worker/ack records delivery]
+    J --> K["POST /v1/worker/ack<br/>Record delivery acknowledgement"]
 ```
 
 The LLM is a working part of the system:
