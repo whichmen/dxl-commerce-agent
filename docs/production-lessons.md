@@ -30,7 +30,7 @@ RAG can help with large unstructured corpora such as manuals, policy explanation
 
 Prompts influence behavior but do not enforce authorization. Refund limits, allowed state, paid amount, evidence requirements, and approval thresholds belong in deterministic code or versioned configuration.
 
-The runtime goes one step further for the demonstrated refund flow: it requires one order ID and a closed, anchored action command explicitly present in the customer message, then re-derives the amount and policy-relevant reason rather than trusting planner fields. Questions, quoted examples, negations, bare amount mentions, and suspicious signed amounts fail closed. Tests inject unsafe planners that attempt to change the order or downgrade the reason and confirm that the runtime preserves the customer-selected order and required evidence.
+The runtime goes one step further for the demonstrated refund flow: it separates `refund_inquiry` from `refund_request`, requires one order ID and a closed, anchored action command explicitly present in the customer message, and re-derives the amount and policy-relevant reason rather than trusting planner fields. Amount parsing uses `Decimal`, not binary floating point. Questions, quoted examples, negations, bare amount mentions, multiple amounts, suspicious signs, and over-precise values fail closed. Tests inject unsafe planners that attempt to change the order or downgrade the reason and confirm that the runtime preserves the customer-selected order and required evidence.
 
 ## 5. Serialize by conversation, not globally
 

@@ -40,6 +40,8 @@ The public `/v1/messages` endpoint does not authenticate the claimed tenant/cust
 | Cross-customer/store fixture lookup | Order/product/evidence tools filter trusted runtime arguments by available scope | API caller identity is not authenticated in this demo |
 | Hallucinated transaction details | Replies use synthetic tool results and named `facts_used` fields | There is no standalone semantic response validator |
 | Unsafe refund | Code checks existing refund, amount, paid amount, maximum, evidence, and approval threshold | Rules are small synthetic examples, not legal/business policy |
+| Inquiry mistaken for a write | `refund_inquiry` is a no-tool route; an anchored explicit-action grammar gates `refund_request` | The grammar covers only this synthetic Chinese demo |
+| Ambiguous money text | `Decimal` parsing rejects multiple, signed, over-precise, and oversized CNY amounts | Currency/locale handling is intentionally narrow |
 | Duplicate message/action | Expiring SQLite claim plus cached response for an exact message ID; one refund business key per scoped order | Different messages in one session are not ordered across processes or hosts |
 | Duplicate execution | SQLite transaction, action state, idempotency record, and unique action index | There is no external backend to reconcile |
 | Same-session race | One `asyncio.Lock` per session | Locking is single-process only |
@@ -57,15 +59,17 @@ The demonstrated redactor covers Chinese mobile-number patterns, email patterns,
 
 The implemented sandbox refund flow is:
 
-1. Require a full match against a closed action-command grammar and exactly one synthetic order ID explicitly present in the current customer message. Questions, quoted examples, negations, bare amount mentions, and suspicious signed amounts fail closed.
-2. Resolve that customer-selected order through the tenant/store/customer-scoped lookup, then derive refund amount and policy-relevant reason from the current message.
-3. Resolve evidence through matching tenant/store/customer/order scope when required.
-4. Evaluate deterministic amount, state, evidence, and approval rules.
-5. Deny without creating an action, or create/reuse one scoped refund action.
-6. Require the demo operator key on approval and execution API calls.
-7. Require an approved state plus caller-generated `Idempotency-Key` to execute.
-8. Atomically record one synthetic result and change the action to `succeeded`.
-9. Return the recorded result when the original idempotency key is replayed; reject a different key after success.
+1. Route policy/status questions, quoted examples, and negations to `refund_inquiry`, which creates no action.
+2. For a write, require a full match against a closed action-command grammar and exactly one synthetic order ID explicitly present in the current customer message.
+3. Parse at most one explicit CNY amount with `Decimal`; signed, over-precise, oversized, or otherwise malformed values fail closed.
+4. Resolve that customer-selected order through the tenant/store/customer-scoped lookup, then derive the policy-relevant reason from the current message.
+5. Resolve evidence through matching tenant/store/customer/order scope when required.
+6. Evaluate deterministic amount, state, evidence, and approval rules.
+7. Deny without creating an action, or create/reuse one scoped refund action.
+8. Require the demo operator key on approval and execution API calls.
+9. Require an approved state plus caller-generated `Idempotency-Key` to execute.
+10. Atomically record one synthetic result and change the action to `succeeded`.
+11. Return the recorded result when the original idempotency key is replayed; reject a different key after success.
 
 The model cannot approve or execute its own proposal. The executor never contacts a financial or commerce platform.
 

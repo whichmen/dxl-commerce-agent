@@ -33,7 +33,8 @@ Include the affected revision, impact, and minimal reproduction steps using synt
 - tenant/store/customer filtering in synthetic order and evidence tools;
 - deterministic refund policy and explicit approval state;
 - expiring exact-message claims, action deduplication, and SQLite execution idempotency;
-- an explicit-action gate that derives one refund order and amount from customer text rather than trusting planner fields;
+- a no-action `refund_inquiry` route plus an explicit-action gate that derives one refund order and amount from customer text rather than trusting planner fields;
+- strict `Decimal` CNY parsing that rejects ambiguous or malformed amounts;
 - operator-key protection for trace, approval, and execution routes;
 - Compose port publication restricted to `127.0.0.1:8000`;
 - 28 unit/integration tests and a separate 50-case deterministic synthetic Eval suite.

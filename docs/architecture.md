@@ -80,9 +80,10 @@ The runtime maps each intent to a fixed implementation path:
 - order status performs a scoped order lookup;
 - logistics first performs a scoped order lookup, then uses its trusted order result for shipment lookup;
 - product questions perform a tenant/store-scoped SKU lookup;
+- refund inquiries return a fixed explanation without reading an order or creating an action;
 - refund requests perform scoped order and, when required, evidence lookups before policy evaluation.
 
-For refunds, the runtime requires exactly one synthetic order ID explicitly present in the current customer message and a full match against a closed action-command grammar. Questions, quoted examples, negations, bare amount mentions, and suspicious signed amounts do not enter the write path. The runtime then re-derives the amount and policy-relevant reason from the message; it does not trust the planner's order, amount, or reason fields. This limits the impact of an unsafe or mistaken planner classification.
+For refunds, the runtime requires exactly one synthetic order ID explicitly present in the current customer message and a full match against a closed action-command grammar. Questions, quoted examples, negations, bare amount mentions, and suspicious signed amounts do not enter the write path. Explicit CNY amounts are parsed with `Decimal`, never binary floating point; multiple, signed, over-precise, or oversized amounts fail closed. The runtime re-derives the amount and policy-relevant reason from the message and does not trust the planner's order, amount, or reason fields. This limits the impact of an unsafe or mistaken planner classification.
 
 ### Synthetic commerce tools
 

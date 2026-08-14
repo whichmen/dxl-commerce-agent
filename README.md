@@ -19,13 +19,14 @@ The repository demonstrates the engineering around a model, rather than presenti
 - deterministic runtime dispatch from that intent to scoped commerce tools;
 - synthetic order, logistics, product, and evidence lookups;
 - deterministic refund policy, explicit approval, and sandbox-only execution;
-- a fail-closed, anchored command grammar before free text may create a sandbox refund proposal;
+- a separate `refund_inquiry` route plus a fail-closed, anchored command grammar before free text may create a sandbox refund proposal;
+- strict `Decimal`-based CNY parsing that rejects multiple, signed, over-precise, or oversized amounts;
 - reclaimable SQLite message leases, business-action deduplication, and execution idempotency;
 - per-session serialization within one process;
 - SQLite-backed dialogue history, redacted traces, actions, and selected audit events;
 - 28 unit/integration tests and 50 deterministic synthetic Eval cases.
 
-This implementation does **not** use native model function calling. The planner emits a typed intent such as `logistics_status` or `refund_request`; trusted runtime code then chooses the allowed tools and derives the refund order, amount, and policy-relevant reason from the customer message. It also does not require LangGraph, MCP, RAG, or multi-agent orchestration.
+This implementation does **not** use native model function calling. The planner emits a typed intent such as `logistics_status`, `refund_inquiry`, or `refund_request`; trusted runtime code then chooses the allowed tools and derives the refund order, amount, and policy-relevant reason from the customer message. It also does not require LangGraph, MCP, RAG, or multi-agent orchestration.
 
 ## Architecture at a glance
 
