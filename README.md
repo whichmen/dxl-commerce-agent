@@ -300,7 +300,7 @@ python scripts/secret_scan.py
 
 ## 联系我
 
-技术交流或其他问题联系我，微信：`whichmen`。
+技术交流或定制开发 联系我，微信：`whichmen`。
 
 ## 许可证
 
